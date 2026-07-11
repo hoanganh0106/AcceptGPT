@@ -1,4 +1,5 @@
 import type { BrowserManager } from './browser-manager';
+import type { InviteHistory } from './history';
 import type { Logger } from './logger';
 import type { Job, JobQueue } from './queue';
 import {
@@ -23,6 +24,7 @@ export class Worker {
     private readonly browser: BrowserManager,
     private readonly workspace: WorkspacePage,
     private readonly telegram: TelegramNotifier,
+    private readonly history: InviteHistory,
   ) {}
 
   /** Bắt đầu vòng lặp tiêu thụ job (fire-and-forget). */
@@ -102,12 +104,16 @@ export class Worker {
           notFound,
           count: outcome.count,
         });
+        // Ghi lịch sử trong ngày cho tính năng /check.
+        for (const r of outcome.results) this.history.record(r.email, r.status);
         await this.telegram.send(buildResultMessage(outcome.results, outcome.count));
         return false;
       }
 
       case 'session-expired':
         this.logger.warn('Session hết hạn', { jobId: job.id });
+        // Các email chưa xử lý được -> ghi nhận là lỗi để /check phản ánh đúng.
+        for (const email of job.emails) this.history.record(email, 'error');
         await this.telegram.send(buildSessionExpiredMessage());
         return true;
     }
@@ -116,6 +122,9 @@ export class Worker {
   private async reportError(job: Job, err: unknown): Promise<void> {
     const message = err instanceof Error ? err.message : String(err);
     this.logger.error('Xử lý job thất bại', { jobId: job.id, err });
+
+    // Ghi nhận các email của job lỗi là 'error' cho tính năng /check.
+    for (const email of job.emails) this.history.record(email, 'error');
 
     // Chụp screenshot phục vụ debug (đặc biệt khi UI đổi).
     try {

@@ -26,6 +26,10 @@ export interface AppConfig {
 
   logsDir: string;
   screenshotsDir: string;
+  /** File JSON lưu lịch sử email đã mời theo ngày (cho tính năng /check). */
+  historyFile: string;
+  /** Lệch múi giờ (giờ) để tính mốc "trong ngày". VN = 7. */
+  dayTzOffsetHours: number;
 
   navTimeoutMs: number;
   actionTimeoutMs: number;
@@ -112,6 +116,8 @@ export function loadConfig(): AppConfig {
 
     logsDir: toAbsolute(optional('LOGS_DIR', './logs')),
     screenshotsDir: toAbsolute(optional('SCREENSHOTS_DIR', './screenshots')),
+    historyFile: toAbsolute(optional('INVITE_HISTORY_FILE', './data/invite-history.json')),
+    dayTzOffsetHours: toInt('DAY_TZ_OFFSET_HOURS', 7),
 
     navTimeoutMs: toInt('NAV_TIMEOUT_MS', 45000),
     actionTimeoutMs: toInt('ACTION_TIMEOUT_MS', 15000),

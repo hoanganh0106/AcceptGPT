@@ -1,6 +1,7 @@
 import type { AppConfig } from './config';
 import type { Logger } from './logger';
 import type { EmailResult } from './workspace-page';
+import type { InviteEntry } from './history';
 
 const sleep = (ms: number): Promise<void> => new Promise((resolve) => setTimeout(resolve, ms));
 
@@ -59,6 +60,30 @@ export function buildErrorMessage(emails: string[], errorText: string): string {
     `${formatEmailList(emails)}\n\n` +
     `Lỗi: ${errorText}`
   );
+}
+
+/**
+ * Báo cáo mời trong ngày cho nút "/check": mỗi email một dòng kèm ✅ (đã duyệt) hoặc
+ * ❌ (thất bại: không thấy trong danh sách chờ hoặc lỗi), cuối cùng là tổng thành công /
+ * tổng thất bại. Danh sách xếp email đã duyệt lên trước.
+ */
+export function buildDailyReport(entries: InviteEntry[], dayLabel: string): string {
+  const success = entries.filter((e) => e.status === 'accepted');
+  const failed = entries.filter((e) => e.status !== 'accepted');
+
+  const lines: string[] = [`📊 Báo cáo mời trong ngày (${dayLabel})`, ''];
+
+  if (entries.length === 0) {
+    lines.push('Hôm nay chưa mời email nào.');
+    return lines.join('\n');
+  }
+
+  const sorted = [...success, ...failed];
+  for (const e of sorted) {
+    lines.push(`${e.status === 'accepted' ? '✅' : '❌'} ${e.email}`);
+  }
+  lines.push('', `Tổng thành công: ${success.length}`, `Tổng thất bại: ${failed.length}`);
+  return lines.join('\n');
 }
 
 // -------------------------------------------------------------------------

@@ -7,6 +7,8 @@ import { WorkspacePage } from './workspace-page';
 import { JobQueue } from './queue';
 import { Worker } from './worker';
 import { buildServer } from './server';
+import { InviteHistory } from './history';
+import { TelegramBot } from './telegram-bot';
 
 async function main(): Promise<void> {
   const config = loadConfig();
@@ -25,6 +27,7 @@ async function main(): Promise<void> {
   const browser = new BrowserManager(config, logger);
   const workspace = new WorkspacePage(config, logger);
   const queue = new JobQueue();
+  const history = new InviteHistory(config.historyFile, config.dayTzOffsetHours, logger);
 
   // 1) Mở Chromium bằng persistent profile và mở sẵn trang Members (plan mục 4).
   await browser.start();
@@ -38,10 +41,14 @@ async function main(): Promise<void> {
   }
 
   // 2) Worker tiêu thụ queue tuần tự.
-  const worker = new Worker(logger, queue, browser, workspace, telegram);
+  const worker = new Worker(logger, queue, browser, workspace, telegram, history);
   worker.start();
 
-  // 3) Webhook server.
+  // 3) Telegram bot poller (nút "/check" báo cáo trong ngày). Độc lập với worker.
+  const bot = new TelegramBot(config, logger, history);
+  await bot.start();
+
+  // 4) Webhook server.
   const app = buildServer(config, logger, queue);
   await app.listen({ host: config.host, port: config.port });
   logger.info('Webhook server đang lắng nghe', { host: config.host, port: config.port });
@@ -54,6 +61,7 @@ async function main(): Promise<void> {
     logger.warn('Nhận tín hiệu dừng, đang tắt service', { signal });
 
     worker.stop();
+    bot.stop();
     try {
       await app.close();
     } catch (err) {

@@ -191,6 +191,7 @@ export class TelegramBot {
       await this.call('sendMessage', {
         chat_id: chatId,
         text: report,
+        parse_mode: 'HTML',
         disable_web_page_preview: true,
         reply_markup: this.keyboardFor(chatId),
       }).catch((err) => this.logger.warn('Gửi báo cáo /check thất bại', { chatId, err }));

@@ -73,12 +73,21 @@ export class TelegramBot {
 
   /** Đăng ký menu lệnh + bỏ qua update tồn đọng trước khi bot khởi động. */
   private async setup(): Promise<void> {
+    // Mặc định (mọi người): CHỈ có /check.
     await this.call('setMyCommands', {
-      commands: [
-        { command: 'check', description: 'Xem báo cáo mời trong ngày' },
-        { command: 'clean', description: 'Dọn sạch data (chỉ admin)' },
-      ],
+      commands: [{ command: 'check', description: 'Xem báo cáo mời trong ngày' }],
     }).catch(() => undefined);
+
+    // Riêng admin: thêm /clean, dùng scope theo từng chat để id khác không thấy lệnh này.
+    for (const adminId of this.adminChatIds) {
+      await this.call('setMyCommands', {
+        commands: [
+          { command: 'check', description: 'Xem báo cáo mời trong ngày' },
+          { command: 'clean', description: 'Dọn sạch data' },
+        ],
+        scope: { type: 'chat', chat_id: adminId },
+      }).catch(() => undefined);
+    }
 
     // Gửi nút cho từng chat id để người dùng có sẵn nút bấm (khỏi phải gõ /start).
     for (const chatId of this.allowedChatIds) {

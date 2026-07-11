@@ -1,0 +1,17 @@
+# Dependencies
+node_modules/
+
+# Build output
+dist/
+
+# Environment / secrets
+.env
+
+# Runtime data
+data/browser-profile/
+logs/
+screenshots/
+
+# Editor / OS
+.DS_Store
+*.log

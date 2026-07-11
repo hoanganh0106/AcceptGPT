@@ -1,0 +1,14 @@
+[Unit]
+Description=Xvfb virtual framebuffer (DISPLAY :99) cho AcceptGPT
+After=network.target
+
+[Service]
+# Chạy dưới user riêng, KHÔNG dùng root.
+User=acceptgpt
+Group=acceptgpt
+ExecStart=/usr/bin/Xvfb :99 -screen 0 1366x900x24 -nolisten tcp
+Restart=always
+RestartSec=3
+
+[Install]
+WantedBy=multi-user.target

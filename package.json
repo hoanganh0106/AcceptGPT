@@ -1,0 +1,28 @@
+{
+  "name": "accept-gpt",
+  "version": "1.0.0",
+  "private": true,
+  "description": "Service tự động duyệt thành viên ChatGPT Business qua webhook + Playwright",
+  "type": "commonjs",
+  "main": "dist/main.js",
+  "engines": {
+    "node": ">=18.18.0"
+  },
+  "scripts": {
+    "dev": "tsx watch src/main.ts",
+    "start": "node dist/main.js",
+    "build": "tsc -p tsconfig.json",
+    "typecheck": "tsc -p tsconfig.json --noEmit",
+    "postinstall-browser": "playwright install chromium"
+  },
+  "dependencies": {
+    "dotenv": "^16.4.5",
+    "fastify": "^4.28.1",
+    "playwright": "^1.47.2"
+  },
+  "devDependencies": {
+    "@types/node": "^20.14.10",
+    "tsx": "^4.16.2",
+    "typescript": "^5.5.3"
+  }
+}

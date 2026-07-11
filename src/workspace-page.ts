@@ -80,18 +80,12 @@ export class WorkspacePage {
     }
 
     const acceptedCount = results.filter((r) => r.status === 'accepted').length;
-    await this.openMembersPage(page);
-    const after = await this.readMemberCount(page);
 
-    // Nếu header còn hiển thị số cũ (eventual consistency), dùng số kỳ vọng.
-    let count = after;
-    if (beforeCount !== null) {
-      const expected = beforeCount + acceptedCount;
-      if (after === null || after < expected) {
-        this.logger.info('Header members cập nhật trễ — dùng số tính bù', { after, expected });
-        count = expected;
-      }
-    }
+    // Không reload, không đọc lại header để đếm: cộng thẳng số vừa duyệt vào số nền đọc
+    // lúc đầu. Header ChatGPT cập nhật trễ (eventual consistency) nên số tính bù này vừa
+    // chính xác vừa nhanh, khỏi phải load lại trang. Nếu lúc đầu không đọc được số nền thì
+    // để null ("Không xác định").
+    const count = beforeCount !== null ? beforeCount + acceptedCount : null;
 
     this.logger.info('Hoàn tất xử lý webhook', {
       total: emails.length,
@@ -109,16 +103,27 @@ export class WorkspacePage {
    */
   private async acceptOne(page: Page, email: string): Promise<boolean> {
     const deadline = Date.now() + Math.max(0, this.config.pendingAppearWaitMs);
-    let first = true;
+    let sawRowButNoButton = false;
+    let iteration = 0;
+    let lastReload = Date.now();
 
     do {
-      // Lần thử lại: reload để lấy request có thể vừa đến (đến trễ sau webhook).
-      if (!first) await this.openMembersPage(page);
-      first = false;
+      // Reload ĐỊNH KỲ (mỗi ~4s) để bắt request đến trễ, KHÔNG reload mỗi vòng lặp:
+      // openMembersPage tốn vài giây, reload liên tục sẽ ăn hết ngân sách chờ.
+      if (iteration > 0 && Date.now() - lastReload > 4000) {
+        await this.openMembersPage(page);
+        lastReload = Date.now();
+      }
+      iteration += 1;
 
       await this.searchFor(page, email);
 
-      const row = await this.findRequestRow(page, email);
+      // Chờ dòng xuất hiện sau khi lọc (XHR có thể trả chậm) thay vì kiểm tra tức thời.
+      let row = await this.waitRequestRow(page, email, 2500);
+      // Fallback: một số UI, ô "Search" lọc theo TÊN chứ không theo email -> gõ email
+      // vào sẽ lọc sạch danh sách. Xóa lọc rồi quét lại toàn bộ để không bỏ sót.
+      if (!row) row = await this.findAfterClearingSearch(page, email);
+
       if (row) {
         const acceptBtn = rowAcceptButton(row).first();
         if (await acceptBtn.isVisible().catch(() => false)) {
@@ -129,12 +134,23 @@ export class WorkspacePage {
           this.logger.info('Đã duyệt email', { email });
           return true;
         }
+        // Thấy dòng nhưng chưa khớp nút Accept — ghi lại để phân biệt với "không có dòng".
+        sawRowButNoButton = true;
+        this.logger.warn('Thấy dòng yêu cầu nhưng chưa thấy nút Accept của dòng đó', { email });
       }
 
-      await sleep(1200);
+      await sleep(600);
     } while (Date.now() < deadline);
 
-    this.logger.info('Không tìm thấy email trong danh sách chờ', { email });
+    // Chẩn đoán khi trượt: đếm số dòng chờ đang hiển thị + chụp screenshot, để biết
+    // là request chưa xuất hiện, hay đã xuất hiện nhưng selector không khớp.
+    const visiblePendingRows = await this.countVisiblePendingRows(page).catch(() => -1);
+    this.logger.warn('Không tìm thấy email trong danh sách chờ', {
+      email,
+      sawRowButNoButton,
+      visiblePendingRows,
+    });
+    await this.screenshot(page, `notfound_${email}`).catch(() => undefined);
     return false;
   }
 
@@ -145,17 +161,51 @@ export class WorkspacePage {
     try {
       await box.fill('');
       await box.fill(email);
-      // Chờ danh sách lọc lại (XHR hoặc filter client-side).
-      await page.waitForLoadState('networkidle', { timeout: 4000 }).catch(() => undefined);
-      await sleep(400);
+      // Chờ ngắn cho filter bắt đầu; waitRequestRow bên dưới sẽ poll chờ dòng render.
+      await sleep(300);
     } catch (err) {
       this.logger.debug('Không gõ được vào ô search (bỏ qua, quét cả trang)', { err });
     }
   }
 
-  /** Tìm dòng yêu cầu ứng với email (thử nhiều selector). */
+  /** Tìm dòng yêu cầu ứng với email (thử nhiều selector), kiểm tra tức thời. */
   private async findRequestRow(page: Page, email: string): Promise<Locator | null> {
     return this.firstVisibleNow(requestRowCandidates(page, email));
+  }
+
+  /** Poll chờ dòng của email xuất hiện trong hạn timeoutMs (sau khi lọc/render chậm). */
+  private async waitRequestRow(page: Page, email: string, timeoutMs: number): Promise<Locator | null> {
+    const deadline = Date.now() + Math.max(0, timeoutMs);
+    do {
+      const row = await this.findRequestRow(page, email);
+      if (row) return row;
+      await sleep(250);
+    } while (Date.now() < deadline);
+    return null;
+  }
+
+  /** Xóa bộ lọc Search rồi quét lại — phòng khi ô Search lọc theo tên, không theo email. */
+  private async findAfterClearingSearch(page: Page, email: string): Promise<Locator | null> {
+    const box = await this.firstVisibleNow(searchBoxCandidates(page));
+    if (!box) return this.findRequestRow(page, email);
+    await box.fill('').catch(() => undefined);
+    await sleep(500);
+    return this.findRequestRow(page, email);
+  }
+
+  /** Đếm sơ bộ số dòng chờ đang hiển thị (sau khi xóa lọc) để chẩn đoán khi trượt. */
+  private async countVisiblePendingRows(page: Page): Promise<number> {
+    const box = await this.firstVisibleNow(searchBoxCandidates(page));
+    if (box) {
+      await box.fill('').catch(() => undefined);
+      await sleep(400);
+    }
+    const counts = await Promise.all([
+      page.getByRole('row').count().catch(() => 0),
+      page.locator('tr').count().catch(() => 0),
+      page.locator('li').count().catch(() => 0),
+    ]);
+    return Math.max(...counts);
   }
 
   /** Nếu có modal xác nhận thì bấm nút xác nhận (một số UI hỏi lại). */

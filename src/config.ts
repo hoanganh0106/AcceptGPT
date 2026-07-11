@@ -17,6 +17,8 @@ export interface AppConfig {
 
   telegramBotToken: string;
   telegramChatId: string;
+  /** Chat id được cấp quyền dọn (xóa sạch) lịch sử. Ngăn cách bằng dấu phẩy. */
+  telegramAdminChatId: string;
 
   browserProfileDir: string;
   headless: boolean;
@@ -37,6 +39,8 @@ export interface AppConfig {
   telegramRetries: number;
   /** Thời gian chờ (ms) một email xuất hiện trong danh sách chờ trước khi kết luận không thấy. */
   pendingAppearWaitMs: number;
+  /** Cửa sổ gom (ms) các webhook tới sát nhau vào một lượt để chỉ reload trang một lần. */
+  queueCoalesceMs: number;
 
   logLevel: LogLevel;
 }
@@ -108,6 +112,7 @@ export function loadConfig(): AppConfig {
 
     telegramBotToken: required('TELEGRAM_BOT_TOKEN'),
     telegramChatId: required('TELEGRAM_CHAT_ID'),
+    telegramAdminChatId: optional('TELEGRAM_ADMIN_CHAT_ID', '5846376104'),
 
     browserProfileDir: toAbsolute(optional('BROWSER_PROFILE_DIR', './data/browser-profile')),
     headless: toBool('HEADLESS', false),
@@ -124,6 +129,7 @@ export function loadConfig(): AppConfig {
     pageLoadRetries: toInt('PAGE_LOAD_RETRIES', 3),
     telegramRetries: toInt('TELEGRAM_RETRIES', 3),
     pendingAppearWaitMs: toInt('PENDING_APPEAR_WAIT_MS', 8000),
+    queueCoalesceMs: toInt('QUEUE_COALESCE_MS', 1000),
 
     logLevel: parseLogLevel(optional('LOG_LEVEL', 'info')),
   };

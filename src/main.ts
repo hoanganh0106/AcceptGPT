@@ -41,7 +41,7 @@ async function main(): Promise<void> {
   }
 
   // 2) Worker tiêu thụ queue tuần tự.
-  const worker = new Worker(logger, queue, browser, workspace, telegram, history);
+  const worker = new Worker(config, logger, queue, browser, workspace, telegram, history);
   worker.start();
 
   // 3) Telegram bot poller (nút "/check" báo cáo trong ngày). Độc lập với worker.

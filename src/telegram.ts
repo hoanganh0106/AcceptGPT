@@ -16,6 +16,11 @@ function formatCount(count: number | null): string {
   return count === null ? 'Không xác định' : String(count);
 }
 
+/** Escape các ký tự đặc biệt của HTML (dùng cho parse_mode=HTML của Telegram). */
+function escapeHtml(text: string): string {
+  return text.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
+}
+
 // -------------------------------------------------------------------------
 // Message builders (theo plan mục 8)
 // -------------------------------------------------------------------------
@@ -63,26 +68,34 @@ export function buildErrorMessage(emails: string[], errorText: string): string {
 }
 
 /**
- * Báo cáo mời trong ngày cho nút "/check": mỗi email một dòng kèm ✅ (đã duyệt) hoặc
- * ❌ (thất bại: không thấy trong danh sách chờ hoặc lỗi), cuối cùng là tổng thành công /
- * tổng thất bại. Danh sách xếp email đã duyệt lên trước.
+ * Báo cáo mời trong ngày cho nút "/check" (parse_mode=HTML).
+ * - KHÔNG kèm tick xanh/đỏ ở từng email.
+ * - Email thành công gom vào MỘT ô (block copy được), email thất bại gom vào một ô khác;
+ *   mỗi email một dòng để dễ copy.
+ * - Cuối cùng là tổng thành công / tổng thất bại.
  */
 export function buildDailyReport(entries: InviteEntry[], dayLabel: string): string {
-  const success = entries.filter((e) => e.status === 'accepted');
-  const failed = entries.filter((e) => e.status !== 'accepted');
+  const success = entries.filter((e) => e.status === 'accepted').map((e) => e.email);
+  const failed = entries.filter((e) => e.status !== 'accepted').map((e) => e.email);
 
-  const lines: string[] = [`📊 Báo cáo mời trong ngày (${dayLabel})`, ''];
+  const lines: string[] = [`📊 Báo cáo mời trong ngày (${escapeHtml(dayLabel)})`, ''];
 
   if (entries.length === 0) {
     lines.push('Hôm nay chưa mời email nào.');
     return lines.join('\n');
   }
 
-  const sorted = [...success, ...failed];
-  for (const e of sorted) {
-    lines.push(`${e.status === 'accepted' ? '✅' : '❌'} ${e.email}`);
+  if (success.length > 0) {
+    lines.push(`Thành công (${success.length}):`);
+    lines.push(`<pre>${escapeHtml(success.join('\n'))}</pre>`);
+    lines.push('');
   }
-  lines.push('', `Tổng thành công: ${success.length}`, `Tổng thất bại: ${failed.length}`);
+  if (failed.length > 0) {
+    lines.push(`Thất bại (${failed.length}):`);
+    lines.push(`<pre>${escapeHtml(failed.join('\n'))}</pre>`);
+    lines.push('');
+  }
+  lines.push(`Tổng thành công: ${success.length}`, `Tổng thất bại: ${failed.length}`);
   return lines.join('\n');
 }
 

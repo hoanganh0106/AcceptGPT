@@ -39,6 +39,14 @@ export class JobQueue {
     });
   }
 
+  /**
+   * Lấy HẾT job đang chờ (không block, có thể rỗng). Dùng để gom nhiều webhook tới sát
+   * nhau thành một lượt xử lý, tránh reload trang liên tục.
+   */
+  drainAll(): Job[] {
+    return this.items.splice(0, this.items.length);
+  }
+
   get size(): number {
     return this.items.length;
   }

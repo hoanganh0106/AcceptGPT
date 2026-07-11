@@ -17,12 +17,10 @@ interface HistoryFile {
   days: Record<string, InviteEntry[]>;
 }
 
-/** Số ngày lịch sử giữ lại trong file (để file không phình vô hạn). */
-const KEEP_DAYS = 14;
-
 /**
  * Lịch sử email đã mời, gộp theo NGÀY (giờ VN). Ghi ra file JSON (không SQL) nên restart
  * service / reboot VPS vẫn giữ được số liệu trong ngày. Dùng cho tính năng "/check".
+ * Không tự xóa data cũ — chỉ bị xóa khi admin bấm "Dọn data" (clearAll).
  */
 export class InviteHistory {
   private data: HistoryFile = { days: {} };
@@ -68,17 +66,13 @@ export class InviteHistory {
     const key = this.dayKey();
     const list = this.data.days[key] ?? (this.data.days[key] = []);
     list.push({ email, status, at: new Date().toISOString() });
-    this.prune();
     this.persist();
   }
 
-  /** Xóa các ngày cũ hơn KEEP_DAYS. */
-  private prune(): void {
-    const keys = Object.keys(this.data.days).sort();
-    while (keys.length > KEEP_DAYS) {
-      const oldest = keys.shift();
-      if (oldest) delete this.data.days[oldest];
-    }
+  /** Xóa SẠCH toàn bộ lịch sử (dùng cho nút "Dọn data" của admin). */
+  clearAll(): void {
+    this.data = { days: {} };
+    this.persist();
   }
 
   /**

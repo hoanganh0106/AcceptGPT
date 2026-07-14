@@ -41,9 +41,9 @@ khi đã có kế hoạch phát lại toàn bộ code.
 
 ```bash
 systemctl is-active accept-gpt
-curl -fsS https://accept.nguyenhoanganh.dev/health
-curl -fsSI https://accept.nguyenhoanganh.dev/
-curl -fsSI https://accept.nguyenhoanganh.dev/admin
+curl -fsS https://nguyenhoanganh.dev/health
+curl -fsSI https://nguyenhoanganh.dev/
+curl -fsSI https://nguyenhoanganh.dev/admin
 journalctl -u accept-gpt -n 100 --no-pager
 ```
 

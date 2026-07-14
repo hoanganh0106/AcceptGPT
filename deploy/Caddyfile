@@ -1,17 +1,16 @@
 # Caddyfile cho AcceptGPT — reverse proxy + tự động HTTPS (Let's Encrypt).
 #
-# Thay accept.nguyenhoanganh.dev bằng domain/subdomain THẬT của bạn
-# (đã trỏ bản ghi A về IP công khai của VPS).
+# Web CDK dùng domain gốc; webhook cũ giữ subdomain riêng.
 #
 # Caddy tự xin & gia hạn chứng chỉ TLS khi khởi động (cần mở cổng 80 + 443 và
 # DNS đã phân giải đúng về VPS). Backend AcceptGPT vẫn chỉ nghe 127.0.0.1:8080.
 
-accept.nguyenhoanganh.dev {
+nguyenhoanganh.dev {
     encode zstd gzip
 
-    # Chỉ nhận public/admin/redeem/webhook/health; các path khác trả 404.
+    # Web nạp CDK và admin; không expose webhook ở domain này.
     @allowed {
-        path / /api/redeem /admin /api/admin/* /webhook /health
+        path / /api/redeem /admin /api/admin/* /health
     }
     handle @allowed {
         reverse_proxy 127.0.0.1:8080
@@ -20,8 +19,17 @@ accept.nguyenhoanganh.dev {
         respond "Not found" 404
     }
 
-    # (Tuỳ chọn) log truy cập:
-    # log {
-    #     output file /var/log/caddy/accept-gpt.log
-    # }
+}
+
+accept.nguyenhoanganh.dev {
+    encode zstd gzip
+
+    # Webhook hiện có giữ nguyên subdomain này.
+    @allowed path /webhook /health
+    handle @allowed {
+        reverse_proxy 127.0.0.1:8080
+    }
+    handle {
+        respond "Not found" 404
+    }
 }

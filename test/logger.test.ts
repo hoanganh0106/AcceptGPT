@@ -1,0 +1,5 @@
+import test from 'node:test';
+import assert from 'node:assert/strict';
+import { createLogger, redactSensitive } from '../src/logger';
+test('redacts nested session and secret values', () => { const session = 'eyJsession.sentinel.token'; const secret = 'sb_secret_sentinel'; const output = JSON.stringify(redactSensitive({ session, nested: [{ authorization: `Bearer ${session}` }], error: new Error(secret) })); assert.equal(output.includes(session), false); assert.equal(output.includes(secret), false); assert.match(output, /REDACTED/); });
+test('logger does not write secret sentinels', () => { const lines: string[] = []; const original = process.stdout.write; process.stdout.write = ((chunk: string | Uint8Array) => { lines.push(String(chunk)); return true; }) as typeof process.stdout.write; try { createLogger({ level: 'info' }).info('test', { accessToken: 'eyJsensitive.token.value', nested: 'sb_secret_sensitive' }); } finally { process.stdout.write = original; } assert.equal(lines.join('').includes('sensitive'), false); });

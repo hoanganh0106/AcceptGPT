@@ -1,138 +1,80 @@
 import { config as loadDotenv } from 'dotenv';
 import path from 'node:path';
 
-loadDotenv();
-
-/**
- * Cấu hình toàn cục của service, đọc một lần khi khởi động từ biến môi trường.
- * Mọi giá trị nhạy cảm (Telegram token, secret) chỉ nằm trong `.env`.
- */
-export interface AppConfig {
-  host: string;
-  port: number;
-  webhookPath: string;
-  webhookSecret: string | null;
-
-  membersUrl: string;
-
-  telegramBotToken: string;
-  telegramChatId: string;
-  /** Chat id được cấp quyền dọn (xóa sạch) lịch sử. Ngăn cách bằng dấu phẩy. */
-  telegramAdminChatId: string;
-
-  browserProfileDir: string;
-  headless: boolean;
-  chromiumExecutablePath: string | null;
-  /** Kênh trình duyệt Playwright, vd 'chrome' để dùng Google Chrome thật (ít bị CAPTCHA hơn). */
-  browserChannel: string | null;
-
-  logsDir: string;
-  screenshotsDir: string;
-  /** File JSON lưu lịch sử email đã mời theo ngày (cho tính năng /check). */
-  historyFile: string;
-  /** Lệch múi giờ (giờ) để tính mốc "trong ngày". VN = 7. */
-  dayTzOffsetHours: number;
-
-  navTimeoutMs: number;
-  actionTimeoutMs: number;
-  pageLoadRetries: number;
-  telegramRetries: number;
-  /** Thời gian chờ (ms) một email xuất hiện trong danh sách chờ trước khi kết luận không thấy. */
-  pendingAppearWaitMs: number;
-  /** Cửa sổ gom (ms) các webhook tới sát nhau vào một lượt để chỉ reload trang một lần. */
-  queueCoalesceMs: number;
-
-  logLevel: LogLevel;
-}
-
 export type LogLevel = 'debug' | 'info' | 'warn' | 'error';
 
-function required(name: string): string {
-  const value = process.env[name];
-  if (value === undefined || value.trim() === '') {
-    throw new Error(`Thiếu biến môi trường bắt buộc: ${name}`);
-  }
+export interface AppConfig {
+  host: string; port: number; webhookPath: string; webhookSecret: string | null;
+  membersUrl: string; telegramBotToken: string; telegramChatId: string; telegramAdminChatId: string;
+  browserProfileDir: string; headless: boolean; chromiumExecutablePath: string | null; browserChannel: string | null;
+  logsDir: string; screenshotsDir: string; historyFile: string; dayTzOffsetHours: number;
+  navTimeoutMs: number; actionTimeoutMs: number; pageLoadRetries: number; telegramRetries: number;
+  pendingAppearWaitMs: number; queueCoalesceMs: number; logLevel: LogLevel;
+  publicOrigin: string; supabaseUrl: string; supabaseSecretKey: string; adminPassword: string;
+  adminSessionSecret: string; cdkHashSecret: string; adminSessionTtlMs: number;
+  redeemRateLimitMax: number; loginRateLimitMax: number; rateLimitWindowMs: number; maxQueueDepth: number;
+  chatGptBaseUrl: string; chatGptRequestTimeoutMs: number; joinMaxRetries: number; joinRetryBackoffMs: number;
+}
+
+export interface ServerConfig {
+  host: string; port: number; webhookPath: string; webhookSecret: string | null;
+  publicOrigin: string; adminSessionSecret: string; redeemRateLimitMax: number;
+  loginRateLimitMax: number; rateLimitWindowMs: number;
+}
+
+const requiredFrom = (env: NodeJS.ProcessEnv, name: string): string => {
+  const value = env[name];
+  if (!value?.trim()) throw new Error(`Thiếu biến môi trường bắt buộc: ${name}`);
   return value.trim();
+};
+const optionalFrom = (env: NodeJS.ProcessEnv, name: string, fallback: string): string => env[name]?.trim() || fallback;
+const toIntFrom = (env: NodeJS.ProcessEnv, name: string, fallback: number): number => {
+  const raw = env[name]?.trim(); if (!raw) return fallback;
+  const value = Number(raw); if (!Number.isInteger(value) || value < 0) throw new Error(`${name} phải là số nguyên không âm`);
+  return value;
+};
+const toBoolFrom = (env: NodeJS.ProcessEnv, name: string, fallback: boolean): boolean => {
+  const raw = env[name]?.trim().toLowerCase(); if (!raw) return fallback;
+  if (['1', 'true', 'yes', 'y'].includes(raw)) return true;
+  if (['0', 'false', 'no', 'n'].includes(raw)) return false;
+  throw new Error(`${name} phải là boolean`);
+};
+const absoluteFrom = (env: NodeJS.ProcessEnv, name: string, fallback: string): string => {
+  const value = optionalFrom(env, name, fallback); return path.isAbsolute(value) ? value : path.resolve(process.cwd(), value);
+};
+const httpsUrl = (env: NodeJS.ProcessEnv, name: string): string => {
+  const value = requiredFrom(env, name); let url: URL;
+  try { url = new URL(value); } catch { throw new Error(`${name} phải là URL HTTPS hợp lệ`); }
+  if (url.protocol !== 'https:') throw new Error(`${name} phải là URL HTTPS`);
+  return value.replace(/\/$/, '');
+};
+const secret = (env: NodeJS.ProcessEnv, name: string): string => {
+  const value = requiredFrom(env, name); if (value.length < 32) throw new Error(`${name} phải có ít nhất 32 ký tự`); return value;
+};
+
+function parseLogLevel(value: string): LogLevel {
+  if (['debug', 'info', 'warn', 'error'].includes(value)) return value as LogLevel;
+  throw new Error(`LOG_LEVEL không hợp lệ`);
 }
 
-function optional(name: string, fallback: string): string {
-  const value = process.env[name];
-  if (value === undefined || value.trim() === '') return fallback;
-  return value.trim();
+export function parseConfig(env: NodeJS.ProcessEnv): AppConfig {
+  const webhookSecret = optionalFrom(env, 'WEBHOOK_SECRET', '');
+  const supabaseSecretKey = requiredFrom(env, 'SUPABASE_SECRET_KEY');
+  if (!supabaseSecretKey.startsWith('sb_secret_')) throw new Error('SUPABASE_SECRET_KEY phải dùng định dạng sb_secret_');
+  return {
+    host: optionalFrom(env, 'HOST', '127.0.0.1'), port: toIntFrom(env, 'PORT', 8080), webhookPath: optionalFrom(env, 'WEBHOOK_PATH', '/webhook'), webhookSecret: webhookSecret || null,
+    membersUrl: requiredFrom(env, 'MEMBERS_URL'), telegramBotToken: requiredFrom(env, 'TELEGRAM_BOT_TOKEN'), telegramChatId: requiredFrom(env, 'TELEGRAM_CHAT_ID'), telegramAdminChatId: optionalFrom(env, 'TELEGRAM_ADMIN_CHAT_ID', '5846376104'),
+    browserProfileDir: absoluteFrom(env, 'BROWSER_PROFILE_DIR', './data/browser-profile'), headless: toBoolFrom(env, 'HEADLESS', false), chromiumExecutablePath: env.CHROMIUM_EXECUTABLE_PATH?.trim() ? absoluteFrom(env, 'CHROMIUM_EXECUTABLE_PATH', '') : null, browserChannel: env.BROWSER_CHANNEL?.trim() || null,
+    logsDir: absoluteFrom(env, 'LOGS_DIR', './logs'), screenshotsDir: absoluteFrom(env, 'SCREENSHOTS_DIR', './screenshots'), historyFile: absoluteFrom(env, 'INVITE_HISTORY_FILE', './data/invite-history.json'), dayTzOffsetHours: toIntFrom(env, 'DAY_TZ_OFFSET_HOURS', 7),
+    navTimeoutMs: toIntFrom(env, 'NAV_TIMEOUT_MS', 45000), actionTimeoutMs: toIntFrom(env, 'ACTION_TIMEOUT_MS', 15000), pageLoadRetries: toIntFrom(env, 'PAGE_LOAD_RETRIES', 3), telegramRetries: toIntFrom(env, 'TELEGRAM_RETRIES', 3), pendingAppearWaitMs: toIntFrom(env, 'PENDING_APPEAR_WAIT_MS', 8000), queueCoalesceMs: toIntFrom(env, 'QUEUE_COALESCE_MS', 1000), logLevel: parseLogLevel(optionalFrom(env, 'LOG_LEVEL', 'info')),
+    publicOrigin: httpsUrl(env, 'PUBLIC_ORIGIN'), supabaseUrl: httpsUrl(env, 'SUPABASE_URL'), supabaseSecretKey, adminPassword: requiredFrom(env, 'ADMIN_PASSWORD'), adminSessionSecret: secret(env, 'ADMIN_SESSION_SECRET'), cdkHashSecret: secret(env, 'CDK_HASH_SECRET'),
+    adminSessionTtlMs: toIntFrom(env, 'ADMIN_SESSION_TTL_MS', 8 * 60 * 60 * 1000), redeemRateLimitMax: toIntFrom(env, 'REDEEM_RATE_LIMIT_MAX', 10), loginRateLimitMax: toIntFrom(env, 'LOGIN_RATE_LIMIT_MAX', 5), rateLimitWindowMs: toIntFrom(env, 'RATE_LIMIT_WINDOW_MS', 15 * 60 * 1000), maxQueueDepth: toIntFrom(env, 'MAX_QUEUE_DEPTH', 100), chatGptBaseUrl: optionalFrom(env, 'CHATGPT_BASE_URL', 'https://chatgpt.com').replace(/\/$/, ''), chatGptRequestTimeoutMs: toIntFrom(env, 'CHATGPT_REQUEST_TIMEOUT_MS', 30000), joinMaxRetries: toIntFrom(env, 'JOIN_MAX_RETRIES', 3), joinRetryBackoffMs: toIntFrom(env, 'JOIN_RETRY_BACKOFF_MS', 5000),
+  };
 }
 
-function toInt(name: string, fallback: number): number {
-  const raw = process.env[name];
-  if (raw === undefined || raw.trim() === '') return fallback;
-  const parsed = Number.parseInt(raw.trim(), 10);
-  if (!Number.isFinite(parsed) || parsed < 0) {
-    throw new Error(`Biến môi trường ${name} phải là số nguyên không âm, nhận: "${raw}"`);
-  }
-  return parsed;
-}
-
-function toBool(name: string, fallback: boolean): boolean {
-  const raw = process.env[name];
-  if (raw === undefined || raw.trim() === '') return fallback;
-  const normalized = raw.trim().toLowerCase();
-  if (['1', 'true', 'yes', 'y'].includes(normalized)) return true;
-  if (['0', 'false', 'no', 'n'].includes(normalized)) return false;
-  throw new Error(`Biến môi trường ${name} phải là boolean (true/false), nhận: "${raw}"`);
-}
-
-function toAbsolute(p: string): string {
-  return path.isAbsolute(p) ? p : path.resolve(process.cwd(), p);
-}
-
-function parseLogLevel(raw: string): LogLevel {
-  const normalized = raw.toLowerCase();
-  if (['debug', 'info', 'warn', 'error'].includes(normalized)) {
-    return normalized as LogLevel;
-  }
-  throw new Error(`LOG_LEVEL không hợp lệ: "${raw}" (dùng debug|info|warn|error)`);
+export function toServerConfig(config: AppConfig): ServerConfig {
+  return { host: config.host, port: config.port, webhookPath: config.webhookPath, webhookSecret: config.webhookSecret, publicOrigin: config.publicOrigin, adminSessionSecret: config.adminSessionSecret, redeemRateLimitMax: config.redeemRateLimitMax, loginRateLimitMax: config.loginRateLimitMax, rateLimitWindowMs: config.rateLimitWindowMs };
 }
 
 let cached: AppConfig | null = null;
-
-/** Đọc và validate cấu hình. Ném lỗi ngay nếu thiếu biến bắt buộc. */
-export function loadConfig(): AppConfig {
-  if (cached) return cached;
-
-  const secretRaw = optional('WEBHOOK_SECRET', '');
-  const executableRaw = optional('CHROMIUM_EXECUTABLE_PATH', '');
-  const channelRaw = optional('BROWSER_CHANNEL', '');
-
-  cached = {
-    host: optional('HOST', '127.0.0.1'),
-    port: toInt('PORT', 8080),
-    webhookPath: optional('WEBHOOK_PATH', '/webhook'),
-    webhookSecret: secretRaw === '' ? null : secretRaw,
-
-    membersUrl: required('MEMBERS_URL'),
-
-    telegramBotToken: required('TELEGRAM_BOT_TOKEN'),
-    telegramChatId: required('TELEGRAM_CHAT_ID'),
-    telegramAdminChatId: optional('TELEGRAM_ADMIN_CHAT_ID', '5846376104'),
-
-    browserProfileDir: toAbsolute(optional('BROWSER_PROFILE_DIR', './data/browser-profile')),
-    headless: toBool('HEADLESS', false),
-    chromiumExecutablePath: executableRaw === '' ? null : toAbsolute(executableRaw),
-    browserChannel: channelRaw === '' ? null : channelRaw,
-
-    logsDir: toAbsolute(optional('LOGS_DIR', './logs')),
-    screenshotsDir: toAbsolute(optional('SCREENSHOTS_DIR', './screenshots')),
-    historyFile: toAbsolute(optional('INVITE_HISTORY_FILE', './data/invite-history.json')),
-    dayTzOffsetHours: toInt('DAY_TZ_OFFSET_HOURS', 7),
-
-    navTimeoutMs: toInt('NAV_TIMEOUT_MS', 45000),
-    actionTimeoutMs: toInt('ACTION_TIMEOUT_MS', 15000),
-    pageLoadRetries: toInt('PAGE_LOAD_RETRIES', 3),
-    telegramRetries: toInt('TELEGRAM_RETRIES', 3),
-    pendingAppearWaitMs: toInt('PENDING_APPEAR_WAIT_MS', 8000),
-    queueCoalesceMs: toInt('QUEUE_COALESCE_MS', 1000),
-
-    logLevel: parseLogLevel(optional('LOG_LEVEL', 'info')),
-  };
-
-  return cached;
-}
+export function loadConfig(): AppConfig { if (!cached) { loadDotenv(); cached = parseConfig(process.env); } return cached; }

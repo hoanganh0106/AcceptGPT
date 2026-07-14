@@ -9,8 +9,10 @@
 accept.nguyenhoanganh.dev {
     encode zstd gzip
 
-    # Chỉ nhận webhook + health; các path khác trả 404.
-    @allowed path /webhook /health
+    # Chỉ nhận public/admin/redeem/webhook/health; các path khác trả 404.
+    @allowed {
+        path / /api/redeem /admin /api/admin/* /webhook /health
+    }
     handle @allowed {
         reverse_proxy 127.0.0.1:8080
     }

@@ -1,82 +1,38 @@
 import crypto from 'node:crypto';
-import Fastify, { type FastifyInstance } from 'fastify';
-import type { AppConfig } from './config';
+import Fastify, { type FastifyInstance, type FastifyReply, type FastifyRequest } from 'fastify';
+import cookie from '@fastify/cookie';
+import rateLimit from '@fastify/rate-limit';
+import type { ServerConfig } from './config';
 import type { Logger } from './logger';
-import { createJob, type JobQueue } from './queue';
-
-interface WebhookBody {
-  emails?: unknown;
-}
-
-/**
- * Chuẩn hóa danh sách email từ webhook (plan mục 5):
- * chỉ giữ string, trim, bỏ rỗng, chuyển chữ thường, loại trùng.
- */
-export function normalizeEmails(input: unknown): string[] {
-  if (!Array.isArray(input)) return [];
-  const seen = new Set<string>();
-  const result: string[] = [];
-  for (const item of input) {
-    if (typeof item !== 'string') continue;
-    const email = item.trim().toLowerCase();
-    if (email === '' || seen.has(email)) continue;
-    seen.add(email);
-    result.push(email);
-  }
-  return result;
-}
-
-/** So sánh secret an toàn trước timing attack. */
-function secretMatches(expected: string, provided: string | undefined): boolean {
-  if (typeof provided !== 'string') return false;
-  const a = Buffer.from(expected);
-  const b = Buffer.from(provided);
-  if (a.length !== b.length) return false;
-  return crypto.timingSafeEqual(a, b);
-}
-
-export function buildServer(config: AppConfig, logger: Logger, queue: JobQueue): FastifyInstance {
-  const app = Fastify({ logger: false, bodyLimit: 256 * 1024 });
-
-  app.get('/health', async () => ({
-    status: 'ok',
-    queued: queue.size,
-    time: new Date().toISOString(),
-  }));
-
-  app.post(config.webhookPath, async (request, reply) => {
-    // Xác thực secret (nếu bật).
-    if (config.webhookSecret !== null) {
-      const provided = request.headers['x-webhook-secret'];
-      const header = Array.isArray(provided) ? provided[0] : provided;
-      if (!secretMatches(config.webhookSecret, header)) {
-        logger.warn('Webhook bị từ chối: secret sai', { ip: request.ip });
-        return reply.code(401).send({ error: 'unauthorized' });
-      }
-    }
-
-    const body = (request.body ?? {}) as WebhookBody;
-
-    if (!Array.isArray(body.emails)) {
-      return reply.code(400).send({ error: 'emails phải là một mảng' });
-    }
-
-    const emails = normalizeEmails(body.emails);
-    if (emails.length === 0) {
-      return reply.code(400).send({ error: 'không có email hợp lệ sau khi chuẩn hóa' });
-    }
-
-    const job = createJob(emails);
-    queue.enqueue(job);
-    logger.info('Nhận webhook, đã đưa vào queue', {
-      jobId: job.id,
-      emails: emails.length,
-      queued: queue.size,
-    });
-
-    // Trả về ngay, không chờ Playwright (plan mục 5).
-    return reply.code(202).send({ queued: true, jobId: job.id, count: emails.length });
-  });
-
+import { createWebhookJob, type JobQueue } from './queue';
+import type { Worker } from './worker';
+import type { RedemptionService } from './redemption-service';
+import type { CdkStore } from './supabase-store';
+import type { CdkIssuer } from './cdk-issuer';
+import { ADMIN_COOKIE_NAME, ADMIN_COOKIE_OPTIONS, type AdminAuth, type AdminSession } from './admin-auth';
+import { renderAdminPage, renderRedeemPage } from './web-pages';
+export interface ServerDependencies { queue: JobQueue; worker: Worker; redemptions: RedemptionService; cdkStore: CdkStore; cdkIssuer: CdkIssuer; adminAuth: AdminAuth; }
+interface WebhookBody { emails?: unknown; }
+const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
+export function normalizeEmails(input: unknown): string[] { if (!Array.isArray(input)) return []; const seen = new Set<string>(); return input.flatMap((item) => { if (typeof item !== 'string') return []; const email = item.trim().toLowerCase(); if (!email || seen.has(email)) return []; seen.add(email); return [email]; }); }
+function secretMatches(expected: string, provided: string | undefined): boolean { if (!provided) return false; const a = Buffer.from(expected); const b = Buffer.from(provided); return a.length === b.length && crypto.timingSafeEqual(a, b); }
+const nonce = (): string => crypto.randomBytes(18).toString('base64');
+function pageHeaders(reply: FastifyReply, value: string): void { reply.headers({ 'cache-control': 'no-store', 'content-security-policy': `default-src 'self'; script-src 'nonce-${value}'; style-src 'nonce-${value}'; img-src 'self' data:; connect-src 'self'; frame-ancestors 'none'; base-uri 'none'; form-action 'self'`, 'referrer-policy': 'no-referrer', 'x-content-type-options': 'nosniff', 'x-frame-options': 'DENY' }); }
+function sessionFor(request: FastifyRequest, auth: AdminAuth): AdminSession | null { const raw = request.cookies[ADMIN_COOKIE_NAME]; if (!raw) return null; const unsigned = request.unsignCookie(raw); return unsigned.valid ? auth.authenticate(unsigned.value) : null; }
+export function buildServer(config: ServerConfig, logger: Logger, dependencies: ServerDependencies): FastifyInstance {
+  const app = Fastify({ logger: false, bodyLimit: 256 * 1024, trustProxy: false });
+  void app.register(cookie, { secret: config.adminSessionSecret });
+  void app.register(rateLimit, { global: false, max: config.redeemRateLimitMax, timeWindow: config.rateLimitWindowMs });
+  app.get('/health', async () => ({ status: 'ok', queued: dependencies.queue.size, ready: dependencies.worker.isReadyForRedemptions, time: new Date().toISOString() }));
+  app.get('/', async (_request, reply) => { const n = nonce(); pageHeaders(reply, n); return reply.type('text/html; charset=utf-8').send(renderRedeemPage(n)); });
+  app.get('/admin', async (_request, reply) => { const n = nonce(); pageHeaders(reply, n); return reply.type('text/html; charset=utf-8').send(renderAdminPage(n)); });
+  app.post('/api/redeem', { config: { rateLimit: { max: config.redeemRateLimitMax, timeWindow: config.rateLimitWindowMs } } }, async (request, reply) => { const body = request.body as { cdk?: unknown; session?: unknown } | null; if (!body || typeof body !== 'object' || Array.isArray(body)) return reply.code(400).send({ code: 'INVALID_INPUT', message: 'Dữ liệu không hợp lệ.' }); const result = await dependencies.redemptions.redeem({ cdk: body.cdk, session: body.session }); return reply.code(result.ok ? 200 : result.code === 'CDK_INVALID_OR_USED' ? 400 : 422).header('cache-control', 'no-store').send(result); });
+  app.post(config.webhookPath, async (request, reply) => { if (config.webhookSecret !== null) { const provided = request.headers['x-webhook-secret']; const header = Array.isArray(provided) ? provided[0] : provided; if (!secretMatches(config.webhookSecret, header)) return reply.code(401).send({ error: 'unauthorized' }); } const body = (request.body ?? {}) as WebhookBody; if (!Array.isArray(body.emails)) return reply.code(400).send({ error: 'emails phải là một mảng' }); const emails = normalizeEmails(body.emails); if (!emails.length) return reply.code(400).send({ error: 'không có email hợp lệ sau khi chuẩn hóa' }); const job = createWebhookJob(emails); try { dependencies.queue.enqueue(job); } catch { return reply.code(503).send({ error: 'service_unavailable' }); } logger.info('Nhận webhook, đã đưa vào queue', { jobId: job.id, emails: emails.length, queued: dependencies.queue.size }); return reply.code(202).send({ queued: true, jobId: job.id, count: emails.length }); });
+  app.post('/api/admin/login', { config: { rateLimit: { max: config.loginRateLimitMax, timeWindow: config.rateLimitWindowMs } } }, async (request, reply) => { const body = request.body as { password?: unknown } | null; const session = await dependencies.adminAuth.login(body?.password); if (!session) return reply.code(401).send({ code: 'LOGIN_FAILED', message: 'Đăng nhập thất bại.' }); reply.setCookie(ADMIN_COOKIE_NAME, session.id, ADMIN_COOKIE_OPTIONS); return reply.header('cache-control', 'no-store').send({ ok: true }); });
+  app.get('/api/admin/state', async (request, reply) => { const session = sessionFor(request, dependencies.adminAuth); if (!session) return reply.code(401).send({ code: 'UNAUTHORIZED', message: 'Cần đăng nhập.' }); try { const workspaceId = await dependencies.cdkStore.getInviteWorkspaceId(); const history = await dependencies.cdkStore.listCdkHistory(50, 0); return reply.header('cache-control', 'no-store').send({ csrfToken: session.csrfToken, workspaceId, history }); } catch { return reply.code(503).send({ code: 'SUPABASE_UNAVAILABLE', message: 'Dịch vụ tạm thời không khả dụng.' }); } });
+  app.post('/api/admin/logout', async (request, reply) => { const session = sessionFor(request, dependencies.adminAuth); if (!session) return reply.code(401).send({ code: 'UNAUTHORIZED', message: 'Cần đăng nhập.' }); try { dependencies.adminAuth.assertMutation(session, request.headers['x-csrf-token'], request.headers.origin); } catch { return reply.code(403).send({ code: 'CSRF_REJECTED', message: 'Yêu cầu không hợp lệ.' }); } dependencies.adminAuth.logout(session.id); reply.clearCookie(ADMIN_COOKIE_NAME, { path: '/' }); return reply.send({ ok: true }); });
+  const mutationSession = (request: FastifyRequest, reply: FastifyReply): AdminSession | null => { const session = sessionFor(request, dependencies.adminAuth); if (!session) { void reply.code(401).send({ code: 'UNAUTHORIZED', message: 'Cần đăng nhập.' }); return null; } try { dependencies.adminAuth.assertMutation(session, request.headers['x-csrf-token'], request.headers.origin); } catch { void reply.code(403).send({ code: 'CSRF_REJECTED', message: 'Yêu cầu không hợp lệ.' }); return null; } return session; };
+  app.put('/api/admin/workspace', async (request, reply) => { if (!mutationSession(request, reply)) return; const body = request.body as { workspaceId?: unknown } | null; if (typeof body?.workspaceId !== 'string' || !UUID.test(body.workspaceId)) return reply.code(400).send({ code: 'INVALID_INPUT', message: 'Workspace ID không hợp lệ.' }); try { await dependencies.cdkStore.setInviteWorkspaceId(body.workspaceId); return reply.send({ ok: true }); } catch { return reply.code(503).send({ code: 'SUPABASE_UNAVAILABLE', message: 'Dịch vụ tạm thời không khả dụng.' }); } });
+  app.post('/api/admin/cdks', async (request, reply) => { if (!mutationSession(request, reply)) return; const body = request.body as { count?: unknown } | null; if (typeof body?.count !== 'number' || !Number.isInteger(body.count) || body.count < 1 || body.count > 100) return reply.code(400).send({ code: 'INVALID_CDK_COUNT', message: 'Số lượng CDK phải từ 1 đến 100.' }); try { const codes = await dependencies.cdkIssuer.issue(body.count); return reply.header('cache-control', 'no-store').send({ codes }); } catch { return reply.code(503).send({ code: 'CDK_GENERATION_FAILED', message: 'Không thể tạo CDK.' }); } });
   return app;
 }

@@ -1,0 +1,6 @@
+import test from 'node:test';
+import assert from 'node:assert/strict';
+import { parseConfig, toServerConfig } from '../src/config';
+const env: NodeJS.ProcessEnv = { MEMBERS_URL: 'https://chatgpt.com/admin/members', TELEGRAM_BOT_TOKEN: 'telegram-test', TELEGRAM_CHAT_ID: '1', PUBLIC_ORIGIN: 'https://accept.example.com', SUPABASE_URL: 'https://project.supabase.co', SUPABASE_SECRET_KEY: `sb_secret_${'a'.repeat(40)}`, ADMIN_PASSWORD: 'correct horse battery staple', ADMIN_SESSION_SECRET: 'b'.repeat(32), CDK_HASH_SECRET: 'c'.repeat(32) };
+test('parseConfig accepts the server-only Supabase secret contract', () => { const config = parseConfig(env); assert.equal(config.maxQueueDepth, 100); assert.equal(config.supabaseUrl, env.SUPABASE_URL); assert.ok(config.supabaseSecretKey.startsWith('sb_secret_')); const server = toServerConfig(config) as Record<string, unknown>; assert.equal('supabaseSecretKey' in server, false); assert.equal('cdkHashSecret' in server, false); assert.equal('adminPassword' in server, false); });
+test('parseConfig rejects a legacy service-role JWT', () => { assert.throws(() => parseConfig({ ...env, SUPABASE_SECRET_KEY: 'eyJhbGciOiJIUzI1NiJ9.legacy.jwt' }), /SUPABASE_SECRET_KEY.*sb_secret_/); });

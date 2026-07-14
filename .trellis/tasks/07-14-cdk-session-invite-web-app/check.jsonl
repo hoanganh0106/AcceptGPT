@@ -1,0 +1,8 @@
+{"file":".trellis/spec/backend/quality-guidelines.md","reason":"Verify backend tests, compatibility, and forbidden secret-handling regressions."}
+{"file":".trellis/spec/backend/database-guidelines.md","reason":"Check atomic one-time use, migrations, crash recovery, and SQLite durability."}
+{"file":".trellis/spec/backend/error-handling.md","reason":"Check public/admin errors are stable and sanitized at every boundary."}
+{"file":".trellis/spec/backend/logging-guidelines.md","reason":"Check no session, token, authorization, raw upstream body, or plaintext CDK reaches logs."}
+{"file":".trellis/spec/frontend/quality-guidelines.md","reason":"Check web security headers, no-store behavior, and client-side session clearing."}
+{"file":".trellis/spec/frontend/type-safety.md","reason":"Check untrusted JSON/session/admin input validation."}
+{"file":".trellis/spec/guides/cross-layer-thinking-guide.md","reason":"Verify workspace snapshot and redemption result remain consistent across API, DB, queue, worker, and UI."}
+{"file":".trellis/spec/guides/code-reuse-thinking-guide.md","reason":"Verify existing accept, Telegram, and history behavior remains the single implementation."}

@@ -17,6 +17,26 @@ export interface Logger {
   child(bindings: Record<string, unknown>): Logger;
 }
 
+const SENSITIVE_KEYS = new Set([
+  'session', 'authorization', 'apikey', 'supabasesecretkey', 'supabase_secret_key',
+  'accesstoken', 'access_token', 'at', 'refreshtoken', 'refresh_token',
+  'sessiontoken', 'session_token', 'idtoken', 'id_token', 'password', 'secret',
+]);
+
+function redactSecretText(value: string): string {
+  return value
+    .replace(/Bearer\s+[^\s]+/gi, 'Bearer [REDACTED]')
+    .replace(/sb_secret_[A-Za-z0-9_-]+/g, '[REDACTED]')
+    .replace(/eyJ[A-Za-z0-9._-]+/g, '[REDACTED]');
+}
+
+export function redactSensitive(value: unknown): unknown {
+  if (Array.isArray(value)) return value.map(redactSensitive);
+  if (value instanceof Error) return { name: value.name, message: redactSecretText(value.message), stack: value.stack ? redactSecretText(value.stack) : undefined };
+  if (value && typeof value === 'object') return Object.fromEntries(Object.entries(value).map(([key, item]) => [key, SENSITIVE_KEYS.has(key.toLowerCase()) ? '[REDACTED]' : redactSensitive(item)]));
+  return typeof value === 'string' ? redactSecretText(value) : value;
+}
+
 interface LoggerOptions {
   level: LogLevel;
   /** Nếu có, log JSON được ghi append vào file này (ngoài stdout). */
@@ -52,13 +72,13 @@ class JsonLogger implements Logger {
   private write(level: LogLevel, msg: string, meta?: Record<string, unknown>): void {
     if (LEVELS[level] < this.threshold) return;
 
-    const record = {
+    const record = redactSensitive({
       time: new Date().toISOString(),
       level,
       msg,
       ...this.bindings,
       ...(meta ?? {}),
-    };
+    });
 
     const line = JSON.stringify(record, replaceErrors);
     // stdout -> journald

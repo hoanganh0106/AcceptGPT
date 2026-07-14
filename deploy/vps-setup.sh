@@ -43,14 +43,14 @@ log "[2/7] Checking Node.js"
 NODE_OK=0
 if command -v node >/dev/null 2>&1 && command -v npm >/dev/null 2>&1; then
   NODE_MAJOR="$(node -p "Number(process.versions.node.split('.')[0])" 2>/dev/null || true)"
-  if [[ "${NODE_MAJOR}" =~ ^[0-9]+$ ]] && (( NODE_MAJOR >= 20 )); then
+  if [[ "${NODE_MAJOR}" =~ ^[0-9]+$ ]] && (( NODE_MAJOR >= 24 )); then
     NODE_OK=1
   fi
 fi
 
 if (( NODE_OK == 0 )); then
-  log "Installing Node.js 20 from NodeSource"
-  curl -fsSL https://deb.nodesource.com/setup_20.x | bash -
+  log "Installing Node.js 24 from NodeSource"
+  curl -fsSL https://deb.nodesource.com/setup_24.x | bash -
   apt-get install -y nodejs
 fi
 

@@ -16,11 +16,11 @@ DEST="${DEST:-/opt/accept-gpt}"
 echo "==> [1/6] Kiểm tra Node.js"
 NODE_OK=0
 if command -v node >/dev/null 2>&1; then
-  case "$(node -v)" in v18*|v20*|v22*) NODE_OK=1 ;; esac
+  case "$(node -v)" in v24*) NODE_OK=1 ;; esac
 fi
 if [ "$NODE_OK" -ne 1 ]; then
-  echo "    Cài Node.js 20 (NodeSource)"
-  curl -fsSL https://deb.nodesource.com/setup_20.x | bash -
+  echo "    Cài Node.js 24 (NodeSource)"
+  curl -fsSL https://deb.nodesource.com/setup_24.x | bash -
   apt-get install -y nodejs
 fi
 echo "    node $(node -v) / npm $(npm -v)"
@@ -34,8 +34,8 @@ rsync -a \
 
 cd "$DEST"
 
-echo "==> [3/6] npm install"
-npm install --no-audit --no-fund
+echo "==> [3/6] npm ci"
+npm ci --no-audit --no-fund
 
 echo "==> [4/6] Playwright Chromium + thư viện hệ thống (có thể mất vài phút)"
 npx playwright install --with-deps chromium

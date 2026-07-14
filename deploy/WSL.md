@@ -31,7 +31,7 @@ Sau khi vào lại được (`wsl -d Ubuntu-22.04 -- bash -c "whoami"` in ra `ro
 bash /mnt/d/Du_an/AcceptGPT/deploy/wsl-setup.sh
 ```
 
-Script sẽ: cài Node 20 (nếu thiếu) → copy project sang `/opt/accept-gpt` → `npm install`
+Script sẽ: cài Node 24 (nếu thiếu) → copy project sang `/opt/accept-gpt` → `npm ci`
 → cài Chromium + thư viện hệ thống → `npm run build`.
 
 > Chạy từ `/opt/accept-gpt` (ext4) chứ KHÔNG chạy trực tiếp trong `/mnt/d` (Windows FS):

@@ -1,0 +1,4 @@
+import test from 'node:test';
+import assert from 'node:assert/strict';
+import { AdminAuth } from '../src/admin-auth';
+test('admin sessions require password, exact origin, and CSRF', async () => { const auth = await AdminAuth.create({ password: 'correct horse battery staple', sessionSecret: 's'.repeat(32), ttlMs: 1000, publicOrigin: 'https://accept.example.com', random: () => Buffer.alloc(32, 1) }); assert.equal(await auth.login('wrong'), null); const session = await auth.login('correct horse battery staple'); assert.ok(session); assert.doesNotThrow(() => auth.assertMutation(session, session.csrfToken, 'https://accept.example.com')); assert.throws(() => auth.assertMutation(session, 'wrong', 'https://accept.example.com'), /CSRF_REJECTED/); assert.throws(() => auth.assertMutation(session, session.csrfToken, 'https://evil.example'), /CSRF_REJECTED/); });

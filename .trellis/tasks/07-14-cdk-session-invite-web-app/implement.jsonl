@@ -1,0 +1,10 @@
+{"file":".trellis/spec/backend/index.md","reason":"Backend entry point for the Fastify, persistence, and worker changes."}
+{"file":".trellis/spec/backend/database-guidelines.md","reason":"SQLite schema, migration, transaction, and atomic CDK ownership context."}
+{"file":".trellis/spec/backend/error-handling.md","reason":"Stable public error contracts and pre/post-consumption failure boundaries."}
+{"file":".trellis/spec/backend/logging-guidelines.md","reason":"Session, token, CDK, and upstream-response redaction requirements."}
+{"file":".trellis/spec/backend/quality-guidelines.md","reason":"Backend quality and verification checklist."}
+{"file":".trellis/spec/frontend/index.md","reason":"Entry point for the server-rendered public and administrator pages."}
+{"file":".trellis/spec/frontend/type-safety.md","reason":"Runtime validation and typed API payload boundaries."}
+{"file":".trellis/spec/frontend/quality-guidelines.md","reason":"Frontend security, accessibility, and no-persistence checks."}
+{"file":".trellis/spec/guides/cross-layer-thinking-guide.md","reason":"Trace CDK, email, workspace, queue result, and error state across every layer."}
+{"file":".trellis/spec/guides/code-reuse-thinking-guide.md","reason":"Reuse the existing queue, worker, workspace page, history, and Telegram paths without duplicating accept logic."}

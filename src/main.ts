@@ -1,6 +1,6 @@
 import path from 'node:path';
-import { loadConfig } from './config';
-import { createLogger } from './logger';
+import { loadConfig, toServerConfig, type AppConfig } from './config';
+import { createLogger, type Logger } from './logger';
 import { TelegramNotifier } from './telegram';
 import { BrowserManager } from './browser-manager';
 import { WorkspacePage } from './workspace-page';
@@ -9,88 +9,28 @@ import { Worker } from './worker';
 import { buildServer } from './server';
 import { InviteHistory } from './history';
 import { TelegramBot } from './telegram-bot';
-
-async function main(): Promise<void> {
-  const config = loadConfig();
-  const logger = createLogger({
-    level: config.logLevel,
-    filePath: path.join(config.logsDir, 'app.log'),
-  });
-
-  logger.info('Khởi động AcceptGPT', {
-    membersUrl: config.membersUrl,
-    headless: config.headless,
-    webhook: `${config.host}:${config.port}${config.webhookPath}`,
-  });
-
-  const telegram = new TelegramNotifier(config, logger);
-  const browser = new BrowserManager(config, logger);
-  const workspace = new WorkspacePage(config, logger);
-  const queue = new JobQueue();
-  const history = new InviteHistory(config.historyFile, config.dayTzOffsetHours, logger);
-
-  // 1) Mở Chromium bằng persistent profile và mở sẵn trang Members (plan mục 4).
-  await browser.start();
-  try {
-    const page = await browser.getPage();
-    await workspace.openMembersPage(page);
-    logger.info('Đã mở sẵn trang Members');
-  } catch (err) {
-    // Lần đầu chạy có thể chưa đăng nhập — không coi là fatal.
-    logger.warn('Chưa mở được trang Members lúc khởi động (có thể cần đăng nhập qua noVNC)', { err });
-  }
-
-  // 2) Worker tiêu thụ queue tuần tự.
-  const worker = new Worker(config, logger, queue, browser, workspace, telegram, history);
-  worker.start();
-
-  // 3) Telegram bot poller (nút "/check" báo cáo trong ngày). Độc lập với worker.
-  const bot = new TelegramBot(config, logger, history);
-  await bot.start();
-
-  // 4) Webhook server.
-  const app = buildServer(config, logger, queue);
-  await app.listen({ host: config.host, port: config.port });
-  logger.info('Webhook server đang lắng nghe', { host: config.host, port: config.port });
-
-  // --- Graceful shutdown --------------------------------------------------
-  let shuttingDown = false;
-  const shutdown = async (signal: string): Promise<void> => {
-    if (shuttingDown) return;
-    shuttingDown = true;
-    logger.warn('Nhận tín hiệu dừng, đang tắt service', { signal });
-
-    worker.stop();
-    bot.stop();
-    try {
-      await app.close();
-    } catch (err) {
-      logger.error('Lỗi khi đóng server', { err });
-    }
-    try {
-      await browser.close();
-    } catch (err) {
-      logger.error('Lỗi khi đóng browser', { err });
-    }
-
-    logger.info('Đã tắt service');
-    process.exit(0);
-  };
-
-  process.on('SIGINT', () => void shutdown('SIGINT'));
-  process.on('SIGTERM', () => void shutdown('SIGTERM'));
-
-  process.on('unhandledRejection', (reason) => {
-    logger.error('unhandledRejection', { err: reason });
-  });
-  process.on('uncaughtException', (err) => {
-    logger.error('uncaughtException', { err });
-  });
+import { createSupabaseClient } from './supabase-client';
+import { SupabaseCdkStore } from './supabase-store';
+import { CdkIssuer } from './cdk-issuer';
+import { AdminAuth } from './admin-auth';
+import { ChatGptJoinClient } from './chatgpt-join-client';
+import { RedemptionService } from './redemption-service';
+export async function buildApplication(config: AppConfig, logger: Logger) {
+  const client = createSupabaseClient(config); const store = new SupabaseCdkStore(client);
+  await store.getInviteWorkspaceId(); await store.markInterrupted();
+  const telegram = new TelegramNotifier(config, logger); const browser = new BrowserManager(config, logger); const workspace = new WorkspacePage(config, logger); const queue = new JobQueue(config.maxQueueDepth); const history = new InviteHistory(config.historyFile, config.dayTzOffsetHours, logger);
+  await browser.start(); try { await workspace.openMembersPage(await browser.getPage()); } catch (error) { logger.warn('Chưa mở được trang Members lúc khởi động', { err: error }); }
+  const worker = new Worker(config, logger, queue, browser, workspace, telegram, history); worker.start();
+  const bot = new TelegramBot(config, logger, history); await bot.start();
+  const joinClient = new ChatGptJoinClient({ baseUrl: config.chatGptBaseUrl, timeoutMs: config.chatGptRequestTimeoutMs, maxRetries: config.joinMaxRetries, retryBackoffMs: config.joinRetryBackoffMs });
+  const redemptions = new RedemptionService({ store, queue, worker, joinClient, cdkHashSecret: config.cdkHashSecret, logger });
+  const adminAuth = await AdminAuth.create({ password: config.adminPassword, sessionSecret: config.adminSessionSecret, ttlMs: config.adminSessionTtlMs, publicOrigin: config.publicOrigin });
+  const issuer = new CdkIssuer(store, config.cdkHashSecret); const app = buildServer(toServerConfig(config), logger, { queue, worker, redemptions, cdkStore: store, cdkIssuer: issuer, adminAuth });
+  return { app, browser, bot, worker, adminAuth };
 }
-
-main().catch((err) => {
-  // Lỗi lúc khởi động là fatal.
-  // eslint-disable-next-line no-console
-  console.error('Khởi động thất bại:', err);
-  process.exit(1);
-});
+async function main(): Promise<void> {
+  const config = loadConfig(); const logger = createLogger({ level: config.logLevel, filePath: path.join(config.logsDir, 'app.log') }); const application = await buildApplication(config, logger); await application.app.listen({ host: config.host, port: config.port }); logger.info('Webhook server đang lắng nghe', { host: config.host, port: config.port });
+  let shuttingDown = false; const shutdown = async (signal: string): Promise<void> => { if (shuttingDown) return; shuttingDown = true; logger.warn('Nhận tín hiệu dừng, đang tắt service', { signal }); application.worker.stop(); application.adminAuth.close(); await application.app.close().catch((error) => logger.error('Lỗi khi đóng server', { err: error })); application.bot.stop(); await application.browser.close().catch((error) => logger.error('Lỗi khi đóng browser', { err: error })); process.exit(0); };
+  process.on('SIGINT', () => void shutdown('SIGINT')); process.on('SIGTERM', () => void shutdown('SIGTERM')); process.on('unhandledRejection', (reason) => logger.error('unhandledRejection', { err: reason })); process.on('uncaughtException', (error) => logger.error('uncaughtException', { err: error }));
+}
+main().catch((error) => { console.error('Khởi động thất bại:', error); process.exit(1); });

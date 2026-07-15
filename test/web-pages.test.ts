@@ -16,11 +16,13 @@ test('pages provide outcome-aware feedback and responsive admin controls', () =>
   assert.match(redeem, /aria-busy/);
 
   const admin = renderAdminPage('nonce');
-  assert.match(admin, /load\(\)\.catch/);
-  assert.match(admin, /Đăng nhập thành công nhưng dịch vụ dữ liệu tạm thời lỗi\./);
+  assert.match(admin, /boot\(\)/);
+  assert.match(admin, /Đăng nhập thành công nhưng chưa tải được dữ liệu/);
   assert.match(admin, /id="copy-created"/);
   assert.match(admin, /navigator\.clipboard\.writeText/);
   assert.match(admin, /class="history-wrap"/);
   assert.match(admin, /Chưa có CDK nào\./);
   assert.match(admin, /badge-/);
+  assert.match(admin, /api\/admin\/cdks\/delete/);
+  assert.match(admin, /Xóa tất cả CDK có thể xóa/);
 });

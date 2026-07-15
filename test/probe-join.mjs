@@ -35,17 +35,19 @@ function extractToken(raw) {
 const BASE = (process.env.PROBE_BASE || 'https://chatgpt.com').replace(/\/$/, '');
 const WS = process.env.PROBE_WS || process.argv[2] || readIf(join(HERE, 'probe-ws.txt'));
 const AT = extractToken(process.env.PROBE_AT || process.argv[3] || readIf(join(HERE, 'probe-at.txt')));
+const isTestRunner = process.env.NODE_TEST_CONTEXT !== undefined || process.execArgv.includes('--test') || process.argv.includes('--test');
 
 if (!WS || !AT) {
-  console.error('Thiếu tham số.');
-  console.error('Cách 1 (khuyên dùng): tạo 2 file cạnh script rồi chạy `node test/probe-join.mjs`:');
-  console.error('  test/probe-at.txt  -> dán access_token (eyJ...) HOẶC cả session JSON');
-  console.error('  test/probe-ws.txt  -> dán workspace UUID');
-  console.error('Cách 2: PROBE_AT="eyJ..." PROBE_WS="fa2aff95-..." node test/probe-join.mjs');
-  console.error('Cách 3: node test/probe-join.mjs <workspace-uuid> <access-token>');
-  process.exit(1);
-}
-
+  if (!isTestRunner) {
+    console.error('Thiếu tham số.');
+    console.error('Cách 1 (khuyên dùng): tạo 2 file cạnh script rồi chạy `node test/probe-join.mjs`:');
+    console.error('  test/probe-at.txt  -> dán access_token (eyJ...) HOẶC cả session JSON');
+    console.error('  test/probe-ws.txt  -> dán workspace UUID');
+    console.error('Cách 2: PROBE_AT="eyJ..." PROBE_WS="fa2aff95-..." node test/probe-join.mjs');
+    console.error('Cách 3: node test/probe-join.mjs <workspace-uuid> <access-token>');
+    process.exitCode = 1;
+  }
+} else {
 const DEVICE_ID = randomUUID(); // 1 device id CỐ ĐỊNH cho cả lượt (giống extension)
 
 const bareHeaders = {
@@ -117,3 +119,4 @@ async function run(label, headers) {
       '  - 409 => coi như OK (đã request / đã là thành viên).',
   );
 })();
+}

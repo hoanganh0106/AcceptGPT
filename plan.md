@@ -1,279 +1,115 @@
-# Plan tool tự động duyệt thành viên ChatGPT Business
+# Plan: Fix redeem bị Cloudflare chặn + Giao diện CDK tiếng Anh
 
-## 1. Mục tiêu
-
-Xây một service chạy 24/7 trên VPS Ubuntu.
-
-Khi nhận webhook chứa danh sách email, service sẽ:
-
-1. Reload trang quản lý thành viên.
-2. Bấm **Accept all**.
-3. Đọc tổng số thành viên hiện tại của workspace.
-4. Gửi kết quả về Telegram.
-
-Không dùng SQL. Job chỉ giữ trong RAM.
+- **Trạng thái:** đã triển khai và kiểm chứng
+- **Ngày:** 2026-07-15
+- **Nguồn lỗi người dùng thấy:** trang "Tham gia workspace" báo **"Lời mời không được chấp nhận."** khi redeem, dù cùng session/workspace đó chạy được bằng extension `gptk12`.
 
 ---
 
-## 2. Công nghệ cần dùng
+## 1. Bối cảnh & nguyên nhân gốc (ĐÃ XÁC NHẬN)
 
-* VPS Ubuntu
-* Node.js + TypeScript
-* Playwright
-* Chromium
-* Xvfb để chạy trình duyệt có giao diện trên VPS
-* noVNC để đăng nhập thủ công khi cần
-* Fastify hoặc Express để nhận webhook
-* Telegram Bot API để gửi thông báo
-* systemd để service tự chạy lại khi VPS reboot hoặc process lỗi
+`JOIN_REJECTED` chỉ phát ra từ [chatgpt-join-client.ts:15](src/chatgpt-join-client.ts#L15), khi cả `invites/request` và `invites/accept` trả non-2xx/non-409 và verify nói chưa-là-member.
 
----
+Đã chạy probe [test/probe-join.mjs](test/probe-join.mjs) **trên đúng VPS**, gọi đúng 3 request theo 2 kiểu header:
 
-## 3. Tài khoản ChatGPT
+| Kiểu | check | invites/request | invites/accept |
+|---|---|---|---|
+| **bare** (fetch trần như code hiện tại) | **403** cloudflare `cf-mitigated=challenge` | **403** | **403** |
+| **browser** (giả Chrome: UA + sec-ch-ua + origin/referer) | **200** | **200 `{"success":true}`** | **200 `{"success":true}`** |
 
-Dùng một tài khoản riêng của bạn trong workspace.
+**Kết luận:** Cloudflare chặn ở **tầng header** (thiếu User-Agent browser). `fetch` của Node không có UA/headers của trình duyệt → bị challenge → JOIN_REJECTED.
 
-Ưu tiên cấp quyền **Admin** nếu Admin có thể duyệt thành viên. Chỉ dùng Owner nếu thực tế bắt buộc.
-
-Đăng nhập thủ công lần đầu qua noVNC. Chromium dùng persistent profile để giữ cookie và session.
+**Hệ quả quan trọng:** **KHÔNG cần Playwright, KHÔNG cần cookie/session_token, KHÔNG cần proxy residential.** Extension chạy được chỉ vì transport của nó là browser thật; chỉ cần thêm header giả-Chrome vào Node fetch là đủ. Workspace ID (`b501c0d0-...`) đúng, token hợp lệ — không phải lỗi cấu hình/token.
 
 ---
 
-## 4. Cách browser hoạt động
+## 2. Mục tiêu / Ngoài phạm vi
 
-Khi service khởi động:
+**Mục tiêu**
+- A. Redeem qua web thành công như extension (bỏ 403 Cloudflare).
+- C. Giao diện CDK (trang redeem + admin) hiển thị tiếng Anh, bao gồm cả text lỗi.
+- B. Dọn file bí mật + thêm log chẩn đoán để lần sau lỗi hiện rõ.
 
-1. Mở Chromium bằng persistent profile.
-2. Mở sẵn trang quản lý thành viên.
-3. Giữ browser và một tab duy nhất chạy liên tục.
-4. Không đóng browser sau mỗi webhook.
-
-Nếu tab bị crash thì tạo tab mới. Nếu Chromium bị lỗi thì mở lại bằng cùng profile.
-
----
-
-## 5. Webhook
-
-Webhook nhận dạng:
-
-```json
-{
-  "emails": [
-    "a@example.com",
-    "b@example.com"
-  ]
-}
-```
-
-Backend cần:
-
-* Kiểm tra `emails` là mảng.
-* Loại bỏ email trống.
-* Chuẩn hóa chữ thường.
-* Đưa request vào queue trong RAM.
-* Trả phản hồi ngay, không chờ Playwright xử lý xong.
-
-Nếu nhiều webhook đến cùng lúc, xử lý lần lượt, không chạy song song.
+**Ngoài phạm vi**
+- Không viết lại sang Playwright/UI-clicking (đã chứng minh là thừa).
+- Không đổi message tiếng Việt phía server/Telegram (chỉ localize ở UI).
+- Không đổi luồng worker duyệt (admin browser) — giữ nguyên.
 
 ---
 
-## 6. Luồng xử lý mỗi webhook
+## 3. Hạng mục công việc
 
-1. Lấy một job từ queue.
-2. Kiểm tra browser và tab còn hoạt động.
-3. Kiểm tra session ChatGPT còn đăng nhập.
-4. Điều hướng về đúng trang Members nếu tab đang ở trang khác.
-5. Reload trang.
-6. Chờ trang tải xong.
-7. Tìm nút **Accept all**.
-8. Nếu có nút:
+### A. Fix transport — [src/chatgpt-join-client.ts](src/chatgpt-join-client.ts)
 
-   * Bấm Accept all.
-   * Xử lý modal xác nhận nếu có.
-   * Chờ thao tác hoàn tất.
-   * Reload lại trang.
-   * Đọc tổng số thành viên hiện tại.
-   * Gửi Telegram thành công.
-9. Nếu không có nút Accept all:
+Sửa method `call()` ([dòng 17](src/chatgpt-join-client.ts#L17)) và `requestJoin`/`verifyMembership`:
 
-   * Coi là không có yêu cầu chờ.
-   * Đọc tổng số thành viên nếu có thể.
-   * Gửi Telegram thông báo không có đơn.
-10. Chuyển sang job tiếp theo.
+1. **Thêm bộ header giả Chrome** cho mọi request (đây là fix cốt lõi):
+   ```
+   user-agent:        Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/131.0.0.0 Safari/537.36
+   accept-language:   en-US,en;q=0.9
+   origin:            <suy từ baseUrl, vd https://chatgpt.com>
+   referer:           <origin>/
+   sec-ch-ua:         "Google Chrome";v="131", "Chromium";v="131", "Not_A Brand";v="24"
+   sec-ch-ua-mobile:  ?0
+   sec-ch-ua-platform:"Windows"
+   sec-fetch-dest:    empty
+   sec-fetch-mode:    cors
+   sec-fetch-site:    same-origin
+   ```
+   Giữ nguyên `accept`, `authorization: Bearer`, `content-type`, `oai-device-id`, `oai-language`.
+2. **Gửi body rỗng `''` trên POST** (hiện không gửi body) — khớp extension.
+3. **Một `oai-device-id` cố định cho cả lượt `requestJoin`**: tạo 1 lần, truyền xuống request → accept → verify (thay vì `randomUUID` mỗi call). Đảm bảo `accept` khớp invite mà `request` tạo. `verifyMembership` nhận thêm tham số `deviceId` tùy chọn (mặc định tự sinh) để không phá interface `JoinClient`.
+4. **User-Agent để ở 1 const** (hoặc env `CHATGPT_USER_AGENT`, default là chuỗi Chrome trên) để dễ cập nhật khi Cloudflare siết.
 
----
+**Rủi ro/bảo trì:** UA có thể cũ sau vài tháng → giữ 1 chỗ để bump. Nếu Cloudflare nâng lên JS-challenge (browser-header cũng 403) thì phương án dự phòng là chạy fetch trong Playwright page — chưa cần bây giờ.
 
-## 7. Selector Playwright
+### B. Dọn dẹp + chẩn đoán
 
-Ưu tiên:
+1. **Xóa file bí mật:** `rm test/probe-at.txt` (chứa access token thật).
+2. **`.gitignore`:** thêm `test/probe-at.txt` và `test/probe-ws.txt`.
+3. Giữ [test/probe-join.mjs](test/probe-join.mjs) làm công cụ chẩn đoán.
+4. **Log status khi non-2xx** trong `call()` (chỉ status + path, **KHÔNG log token**). Port bảng nghĩa mã lỗi của extension vào `DomainError` detail:
+   `401`=email domain không được phép/token hết hạn · `402/422`=workspace ngừng hoạt động · `403`=hết ghế/bị chặn · `404`=sai workspace ID · `409`=đã request/đã là member · `500`=workspace không tồn tại.
 
-1. `getByRole`
-2. `getByText`
-3. `data-testid` nếu giao diện có
-4. XPath tương đối khi cần
+### C. Giao diện tiếng Anh — [src/web-pages.ts](src/web-pages.ts)
 
-Không dùng XPath tuyệt đối kiểu `/html/body/...`.
+**Phạm vi: CẢ 2 trang** (mặc định; có thể cắt còn 1 nếu muốn).
 
-Toàn bộ selector nên đặt trong một file riêng để dễ sửa khi giao diện ChatGPT thay đổi.
+1. **Trang redeem** `renderRedeemPage` ([dòng 4](src/web-pages.ts#L4)):
+   - Tiêu đề "Tham gia workspace" → "Join workspace"
+   - Notice, label `CDK`/`ChatGPT session`, placeholder, nút "Gửi yêu cầu" → "Submit request"
+   - Text trạng thái/busy trong JS
+2. **Trang admin** `renderAdminPage` ([dòng 6](src/web-pages.ts#L6)):
+   - "Quản trị CDK" → "CDK Management", đăng nhập, workspace, tạo/xóa CDK, tiêu đề bảng lịch sử, nút, hộp confirm, message
+3. **Localize text lỗi từ server (điểm dễ sót):** toast lỗi trên trang lấy từ `data.message` (server trả tiếng Việt). Chỉ dịch HTML là **chưa đủ**.
+   → Trong JS mỗi trang, **map `data.code` → text tiếng Anh** (response đã có `code`). Giữ nguyên message tiếng Việt phía server/Telegram. Các code cần map: `CDK_INVALID_OR_USED`, `JOIN_REJECTED`, `ACCEPT_NOT_FOUND`, `WORKER_UNAVAILABLE`, `UPSTREAM_TIMEOUT`, `SESSION_INVALID`, `WORKSPACE_NOT_CONFIGURED`, `RATE_LIMITED`, `INVALID_INPUT`, `INTERNAL_ERROR`, `LOGIN_FAILED`, `CSRF_REJECTED`, `SUPABASE_UNAVAILABLE`, `INVALID_CDK_COUNT`, `CDK_GENERATION_FAILED`.
 
----
+### D. Kiểm chứng
 
-## 8. Telegram
-
-### Thành công
-
-```text
-✅ Đã duyệt thành viên
-
-Email:
-- a@example.com
-- b@example.com
-
-Tổng thành viên hiện tại: 37
-```
-
-### Không có yêu cầu chờ
-
-```text
-⚠️ Không có yêu cầu thành viên để duyệt
-
-Email từ webhook:
-- a@example.com
-- b@example.com
-
-Tổng thành viên hiện tại: 35
-```
-
-### Không đọc được số lượng
-
-```text
-✅ Đã duyệt thành viên
-
-Email:
-- a@example.com
-- b@example.com
-
-Tổng thành viên hiện tại: Không xác định
-```
-
-### Session hết hạn
-
-```text
-⚠️ Phiên đăng nhập ChatGPT đã hết hạn
-
-Bot đã dừng xử lý.
-Hãy đăng nhập lại trên VPS.
-```
-
-### Lỗi xử lý
-
-```text
-❌ Duyệt thành viên thất bại
-
-Email:
-- a@example.com
-- b@example.com
-
-Lỗi: Không tìm thấy nút Accept all
-```
+1. ✅ `npm run build` (tsc) + `npm test` đã chạy xanh.
+2. ✅ Regression test ở [test/chatgpt-join-client.test.ts](test/chatgpt-join-client.test.ts) assert browser headers, body POST rỗng, và `oai-device-id` dùng xuyên suốt request/accept/verify.
+3. ⏳ Redeem thật từ web form cần chạy với session/CDK thật trên VPS; probe vẫn được giữ để chẩn đoán, không commit token.
+4. ✅ Render `/` và `/admin` đã chuyển sang tiếng Anh; test kiểm tra map `data.code` sang toast tiếng Anh.
 
 ---
 
-## 9. Đọc tổng số thành viên
+## 4. Thứ tự & rollback
 
-Ưu tiên đọc con số tổng được hiển thị trực tiếp trên giao diện Members.
+- **Thứ tự:** A (fix bug) → C (tiếng Anh) → B (dọn/log) → D (verify).
+- **Rollback:** mỗi hạng mục độc lập; A chỉ thêm header (không đổi hành vi khi đã 2xx). Nếu A gây lỗi lạ, revert riêng file `chatgpt-join-client.ts`.
 
-Không đếm số dòng nếu danh sách có phân trang.
+## 5. Quyết định mặc định (chỉnh nếu cần)
 
-Nếu duyệt thành công nhưng không đọc được tổng số, vẫn gửi Telegram với giá trị `Không xác định`.
-
----
-
-## 10. Xử lý lỗi
-
-* Session hết hạn: dừng worker và báo Telegram.
-* Tab crash: mở tab mới rồi thử lại.
-* Browser crash: mở lại Chromium bằng persistent profile.
-* Trang tải lỗi: reload lại một số lần.
-* Không thấy Accept all: báo không có yêu cầu chờ.
-* Giao diện thay đổi hoặc nút không rõ: không click bừa, chụp screenshot và báo Telegram.
-* Telegram gửi lỗi: thử gửi lại vài lần.
-* VPS restart: chấp nhận mất các job đang nằm trong RAM.
+- Tiếng Anh cho **cả** admin page, không chỉ trang redeem.
+- **Có** map mã lỗi sang tiếng Anh (nếu bỏ, toast lỗi vẫn tiếng Việt).
+- Không đổi message server/Telegram.
 
 ---
 
-## 11. Bảo mật
+## 6. Kết quả triển khai
 
-* noVNC chỉ mở qua SSH tunnel, không public Internet.
-* Backend webhook đặt sau Caddy hoặc Nginx.
-* Chỉ mở cổng HTTPS và SSH.
-* Telegram token và cấu hình đặt trong `.env`.
-* Browser profile chỉ cho Linux user chạy service đọc.
-* Không lưu mật khẩu ChatGPT trong code.
-* Bật MFA cho tài khoản automation.
-
----
-
-## 12. Cấu trúc project
-
-```text
-src/
-  main.ts
-  config.ts
-  server.ts
-  queue.ts
-  browser-manager.ts
-  workspace-page.ts
-  worker.ts
-  telegram.ts
-  logger.ts
-
-data/
-  browser-profile/
-
-logs/
-screenshots/
-
-.env
-.env.example
-```
-
----
-
-## 13. Chạy production
-
-Dùng systemd để:
-
-* Khởi động Xvfb.
-* Khởi động service Node.js.
-* Tự restart nếu process lỗi.
-* Tự chạy lại sau khi VPS reboot.
-* Ghi log vào journald.
-
----
-
-## 14. Thứ tự triển khai
-
-1. Cài VPS, Node.js, Playwright, Chromium và Xvfb.
-2. Cài noVNC và đăng nhập ChatGPT thủ công.
-3. Xác định URL trang Members.
-4. Xác định selector Accept all, modal và tổng số thành viên.
-5. Làm Browser Manager giữ Chromium mở liên tục.
-6. Làm webhook nhận danh sách email.
-7. Làm queue trong RAM.
-8. Làm flow reload và Accept all.
-9. Làm Telegram notification.
-10. Test khi:
-
-* Có pending request.
-* Không có pending request.
-* Session hết hạn.
-* Browser crash.
-* Nhiều webhook đến cùng lúc.
-
-11. Đưa service vào systemd.
-12. Chạy thử vài ngày trước khi dùng chính thức.
-
-## 15. Lưu ý quan trọng
-
-Bot sẽ bấm **Accept all**, nên nếu webhook gửi 2 email nhưng workspace có 5 yêu cầu chờ, cả 5 yêu cầu sẽ được duyệt. Telegram vẫn chỉ hiển thị danh sách email nhận từ webhook và tổng thành viên hiện tại sau thao tác.
+- ✅ `ChatGptJoinClient` gửi bộ browser headers, body POST rỗng, và một `oai-device-id` cố định trong mỗi lượt join.
+- ✅ Log non-2xx chỉ gồm `path` và `status`; không ghi access token.
+- ✅ `test/probe-at.txt` và `test/probe-ws.txt` được ignore; không có file token local hiện hữu khi kiểm tra.
+- ✅ Redeem page và admin page dùng tiếng Anh; toast tra theo error `code` thay vì hiển thị message tiếng Việt từ server.
+- ✅ Kiểm chứng cục bộ: full suite 31 pass, 1 skip, 0 fail; `typecheck`, `build`, `node --check test/probe-join.mjs`, và `git diff --check` đều pass.

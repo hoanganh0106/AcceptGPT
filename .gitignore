@@ -6,6 +6,8 @@ dist/
 
 # Environment / secrets
 .env
+test/probe-at.txt
+test/probe-ws.txt
 
 # Runtime data
 data/browser-profile/

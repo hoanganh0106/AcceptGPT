@@ -16,7 +16,10 @@ Questions to answer:
 - How are errors returned to clients?
 -->
 
-(To be filled by the team)
+Domain failures use `DomainError` from `src/domain-error.ts`. Each error has a
+stable machine-readable `code`, a Vietnamese server-facing `publicMessage`,
+and an optional safe cause detail for diagnostics. API handlers return the code
+and message as JSON; browser pages translate known codes into English copy.
 
 ---
 
@@ -24,7 +27,9 @@ Questions to answer:
 
 <!-- Custom error classes/types -->
 
-(To be filled by the team)
+`DomainErrorCode` is the shared error taxonomy for validation, upstream,
+worker, storage, and redemption failures. Do not use raw upstream response
+bodies as public messages.
 
 ---
 
@@ -32,7 +37,10 @@ Questions to answer:
 
 <!-- Try-catch patterns, error propagation -->
 
-(To be filled by the team)
+Validate workspace/CDK/session inputs before claiming a CDK. Catch unknown
+errors at the service boundary and convert them to `INTERNAL_ERROR`. For
+ChatGPT requests, retry transient 429/5xx responses, log only path/status, and
+include only the safe status reason in `DomainError.safeCauseCode`.
 
 ---
 
@@ -40,7 +48,9 @@ Questions to answer:
 
 <!-- Standard error response format -->
 
-(To be filled by the team)
+Responses use `{ code, message }` for failures and add `ok`/result fields for
+successful operations. The frontend must branch on `code`, not copy server
+wording into user-facing text.
 
 ---
 

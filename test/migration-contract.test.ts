@@ -11,3 +11,10 @@ test('CDK deletion migration permits only unused and failed CDKs through an RPC 
   assert.match(sql, /grant execute on function public\.delete_removable_cdks\(uuid\[\]\) to service_role/);
   assert.doesNotMatch(sql, /grant delete on table public\.cdks/);
 });
+test('CDK plaintext migration keeps code immutable and service-role scoped', () => {
+  const sql = readFileSync('supabase/migrations/202607150002_cdk_plaintext.sql', 'utf8').toLowerCase();
+  assert.match(sql, /add column code_plain text/);
+  assert.match(sql, /new\.code_plain is distinct from old\.code_plain/);
+  assert.match(sql, /grant insert \(code_hash, code_plain\) on table public\.cdks to service_role/);
+  assert.match(sql, /create index cdks_email_idx/);
+});

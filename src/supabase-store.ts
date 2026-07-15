@@ -1,14 +1,15 @@
 import type { AppSupabaseClient } from './supabase-client';
 import type { CdkResult, CdkStatus } from './supabase-types';
 import { DomainError } from './domain-error';
+import { formatCdk } from './cdk';
 
 export type TerminalCdkResult = Exclude<CdkResult, 'processing'>;
 export interface ClaimedCdk { id: string; email: string; workspaceId: string; usedAt: string; result: 'processing'; }
-export interface CdkHistoryRecord { id: string; status: CdkStatus; email: string | null; workspaceId: string | null; result: CdkResult | null; createdAt: string; usedAt: string | null; }
+export interface CdkHistoryRecord { id: string; status: CdkStatus; code: string | null; email: string | null; workspaceId: string | null; result: CdkResult | null; createdAt: string; usedAt: string | null; }
 export interface CdkHistoryPage { records: CdkHistoryRecord[]; total: number; }
 export interface ClaimCdkInput { codeHash: string; email: string; workspaceId: string; }
 export interface CdkStore {
-  getInviteWorkspaceId(): Promise<string | null>; setInviteWorkspaceId(workspaceId: string): Promise<void>; hasUnusedCdk(codeHash: string): Promise<boolean>; insertCdkHashes(codeHashes: string[]): Promise<void>; claimCdk(input: ClaimCdkInput): Promise<ClaimedCdk | null>; finishCdk(id: string, result: TerminalCdkResult): Promise<boolean>; markInterrupted(): Promise<number>; listCdkHistory(limit: number, offset: number): Promise<CdkHistoryPage>; deleteRemovableCdks(ids: string[] | null): Promise<number>;
+  getInviteWorkspaceId(): Promise<string | null>; setInviteWorkspaceId(workspaceId: string): Promise<void>; hasUnusedCdk(codeHash: string): Promise<boolean>; insertCdks(items: Array<{ codeHash: string; codePlain: string }>): Promise<void>; claimCdk(input: ClaimCdkInput): Promise<ClaimedCdk | null>; finishCdk(id: string, result: TerminalCdkResult): Promise<boolean>; markInterrupted(): Promise<number>; listCdkHistory(limit: number, offset: number, query?: string): Promise<CdkHistoryPage>; deleteRemovableCdks(ids: string[] | null): Promise<number>;
 }
 const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
 const isResult = (v: unknown): v is CdkResult => typeof v === 'string' && ['processing','accepted','already_member','join_rejected','accept_not_found','worker_unavailable','upstream_timeout','internal_error','service_interrupted'].includes(v);
@@ -26,14 +27,14 @@ export class SupabaseCdkStore implements CdkStore {
   async getInviteWorkspaceId(): Promise<string | null> { const { data, error } = await this.client.from('app_settings').select('invite_workspace_id').eq('id', 1).single(); if (error) throw safeError('settings_read', error); return data.invite_workspace_id; }
   async setInviteWorkspaceId(workspaceId: string): Promise<void> { const { error } = await this.client.from('app_settings').update({ invite_workspace_id: workspaceId, updated_at: new Date().toISOString() }).eq('id', 1); if (error) throw safeError('settings_update', error); }
   async hasUnusedCdk(codeHash: string): Promise<boolean> { const { data, error } = await this.client.from('cdks').select('id').eq('code_hash', codeHash).eq('status', 'unused').maybeSingle(); if (error) throw safeError('cdk_inspect', error); return Boolean(data); }
-  async insertCdkHashes(codeHashes: string[]): Promise<void> { const { error } = await this.client.from('cdks').insert(codeHashes.map((code_hash) => ({ code_hash }))); if (error) throw safeError('cdk_insert', error); }
+  async insertCdks(items: Array<{ codeHash: string; codePlain: string }>): Promise<void> { const { error } = await this.client.from('cdks').insert(items.map(({ codeHash: code_hash, codePlain: code_plain }) => ({ code_hash, code_plain }))); if (error) throw safeError('cdk_insert', error); }
   async claimCdk(input: ClaimCdkInput): Promise<ClaimedCdk | null> { const { data, error } = await this.client.rpc('consume_cdk', { p_code_hash: input.codeHash, p_email: input.email, p_workspace_id: input.workspaceId }); if (error) throw safeError('consume_cdk', error); return data?.length ? claimed(data[0]) : null; }
   async finishCdk(id: string, result: TerminalCdkResult): Promise<boolean> { const { data, error } = await this.client.from('cdks').update({ result }).eq('id', id).eq('status', 'used').eq('result', 'processing').select('id'); if (error) throw safeError('finish_cdk', error); return data.length === 1; }
   async markInterrupted(): Promise<number> { const { data, error } = await this.client.from('cdks').update({ result: 'service_interrupted' }).eq('status', 'used').eq('result', 'processing').select('id'); if (error) throw safeError('mark_interrupted', error); return data.length; }
-  async listCdkHistory(limit: number, offset: number): Promise<CdkHistoryPage> {
-    const { data, error, count } = await this.client.from('cdks').select('id,status,email,workspace_id,result,created_at,used_at', { count: 'exact' }).order('created_at', { ascending: false }).range(offset, offset + Math.max(0, limit) - 1);
+  async listCdkHistory(limit: number, offset: number, query?: string): Promise<CdkHistoryPage> {
+    const normalizedQuery = query?.trim() ?? ''; const codeQuery = normalizedQuery.replaceAll('-', '').toUpperCase(); const escaped = codeQuery.replace(/[\\%_(),]/g, '\\$&'); let builder = this.client.from('cdks').select('id,status,code_plain,email,workspace_id,result,created_at,used_at', { count: 'exact' }).order('created_at', { ascending: false }); if (escaped) builder = builder.or(`email.ilike.%${escaped}%,code_plain.ilike.%${escaped}%`); const { data, error, count } = await builder.range(offset, offset + Math.max(0, limit) - 1);
     if (error) throw safeError('history_read', error);
-    const records: CdkHistoryRecord[] = (data ?? []).map((row) => ({ id: row.id, status: row.status, email: row.email, workspaceId: row.workspace_id, result: isResult(row.result) ? row.result : null, createdAt: row.created_at, usedAt: row.used_at }));
+    const records: CdkHistoryRecord[] = (data ?? []).map((row) => ({ id: row.id, status: row.status, code: typeof row.code_plain === 'string' ? formatCdk(row.code_plain) : null, email: row.email, workspaceId: row.workspace_id, result: isResult(row.result) ? row.result : null, createdAt: row.created_at, usedAt: row.used_at }));
     return { records, total: count ?? records.length };
   }
   async deleteRemovableCdks(ids: string[] | null): Promise<number> { const { data, error } = await this.client.rpc('delete_removable_cdks', { p_ids: ids }); if (error) throw safeError('delete_cdks', error); return typeof data === 'number' ? data : 0; }

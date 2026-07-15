@@ -11,7 +11,7 @@ async function appFor(overrides: { deleted?: number; redeemRateLimitMax?: number
   const app = buildServer({ ...config, redeemRateLimitMax: overrides.redeemRateLimitMax ?? config.redeemRateLimitMax }, logger, {
     queue: new JobQueue(), worker: { isReadyForRedemptions: true } as never,
     redemptions: { redeem: async () => ({ ok: false, code: 'INVALID_INPUT', message: 'invalid' }) } as never,
-    cdkStore: { getInviteWorkspaceId: async () => null, setInviteWorkspaceId: async () => {}, hasUnusedCdk: async () => false, insertCdkHashes: async () => {}, claimCdk: async () => null, finishCdk: async () => false, markInterrupted: async () => 0, listCdkHistory: async () => ({ records: [], total: 0 }), deleteRemovableCdks: async () => overrides.deleted ?? 2 },
+    cdkStore: { getInviteWorkspaceId: async () => null, setInviteWorkspaceId: async () => {}, hasUnusedCdk: async () => false, insertCdks: async () => {}, claimCdk: async () => null, finishCdk: async () => false, markInterrupted: async () => 0, listCdkHistory: async () => ({ records: [], total: 0 }), deleteRemovableCdks: async () => overrides.deleted ?? 2 },
     cdkIssuer: { issue: async () => [] } as never, adminAuth: auth,
   });
   return app;

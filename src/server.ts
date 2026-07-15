@@ -6,7 +6,7 @@ import type { ServerConfig } from './config';
 import type { Logger } from './logger';
 import { createWebhookJob, type JobQueue } from './queue';
 import type { Worker } from './worker';
-import type { RedemptionService } from './redemption-service';
+import type { RedemptionProgress, RedemptionService } from './redemption-service';
 import type { CdkStore } from './supabase-store';
 import type { CdkIssuer } from './cdk-issuer';
 import { ADMIN_COOKIE_NAME, ADMIN_COOKIE_OPTIONS, type AdminAuth, type AdminSession } from './admin-auth';
@@ -23,7 +23,21 @@ function pageNumber(value: unknown, fallback: number, max: number): number { con
 export function buildServer(config: ServerConfig, logger: Logger, dependencies: ServerDependencies): FastifyInstance {
   const app = Fastify({ logger: false, bodyLimit: 256 * 1024, trustProxy: false }); void app.register(cookie, { secret: config.adminSessionSecret });
   void app.register(async (limited) => { await limited.register(rateLimit, { global: true, max: config.redeemRateLimitMax, timeWindow: config.rateLimitWindowMs, errorResponseBuilder: () => Object.defineProperty({ code: 'RATE_LIMITED', message: 'Bạn thao tác quá nhanh. Vui lòng thử lại sau.' }, 'statusCode', { value: 429 }) });
-    limited.post('/api/redeem', async (request, reply) => { const body = request.body as { cdk?: unknown; session?: unknown } | null; if (!body || typeof body !== 'object' || Array.isArray(body)) return reply.code(400).send({ code: 'INVALID_INPUT', message: 'Dữ liệu không hợp lệ.' }); const result = await dependencies.redemptions.redeem({ cdk: body.cdk, session: body.session }); return reply.code(result.ok ? 200 : result.code === 'CDK_INVALID_OR_USED' ? 400 : 422).header('cache-control', 'no-store').send(result); });
+    limited.post('/api/redeem', async (request, reply) => {
+      const body = request.body as { cdk?: unknown; session?: unknown } | null;
+      if (!body || typeof body !== 'object' || Array.isArray(body)) return reply.code(400).send({ code: 'INVALID_INPUT', message: 'Dữ liệu không hợp lệ.' });
+      reply.hijack();
+      const writeLine = (value: unknown): void => { try { if (!reply.raw.writableEnded) reply.raw.write(`${JSON.stringify(value)}\n`); } catch { /* Client disconnects are not redemption failures. */ } };
+      try {
+        reply.raw.writeHead(200, { 'content-type': 'application/x-ndjson; charset=utf-8', 'cache-control': 'no-store', 'x-content-type-options': 'nosniff' });
+        const result = await dependencies.redemptions.redeem({ cdk: body.cdk, session: body.session }, (event: RedemptionProgress) => writeLine({ type: 'progress', ...event }));
+        writeLine({ type: 'result', ...result });
+      } catch {
+        writeLine({ type: 'result', ok: false, code: 'INTERNAL_ERROR', message: 'The request could not be completed.' });
+      } finally {
+        try { if (!reply.raw.writableEnded) reply.raw.end(); } catch { /* Client disconnects are not redemption failures. */ }
+      }
+    });
     limited.post('/api/admin/login', { config: { rateLimit: { max: config.loginRateLimitMax, timeWindow: config.rateLimitWindowMs } } }, async (request, reply) => { const body = request.body as { password?: unknown } | null; const session = await dependencies.adminAuth.login(body?.password); if (!session) return reply.code(401).send({ code: 'LOGIN_FAILED', message: 'Đăng nhập thất bại.' }); reply.setCookie(ADMIN_COOKIE_NAME, session.cookieValue, ADMIN_COOKIE_OPTIONS); return reply.header('cache-control', 'no-store').send({ ok: true }); });
   });
   app.get('/health', async () => ({ status: 'ok', queued: dependencies.queue.size, ready: dependencies.worker.isReadyForRedemptions, time: new Date().toISOString() }));

@@ -38,3 +38,14 @@ test('redeem and admin pages use English copy and localize server error codes', 
   }
   assert.doesNotMatch(html, /Tham gia workspace|Gửi yêu cầu|Đăng nhập|Đang xử lý|Không thể hoàn tất/);
 });
+
+test('redeem page renders real progress logs and handles NDJSON results', () => {
+  const html = renderRedeemPage('nonce');
+  assert.match(html, /STEP_MESSAGES/);
+  assert.match(html, /id="log"/);
+  assert.match(html, /application\/x-ndjson/);
+  assert.match(html, /getReader\(\)/);
+  assert.match(html, /Done! .* is now a member/);
+  assert.match(html, /is already a member of this workspace/);
+  assert.match(html, /Submitting request…/);
+});

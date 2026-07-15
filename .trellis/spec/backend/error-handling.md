@@ -52,6 +52,11 @@ Responses use `{ code, message }` for failures and add `ok`/result fields for
 successful operations. The frontend must branch on `code`, not copy server
 wording into user-facing text.
 
+Streaming endpoints keep the HTTP response successful once the stream starts;
+the final NDJSON `result` event carries the existing success/error contract.
+Validation failures that occur before stream takeover, such as an invalid body
+shape or rate limiting, remain ordinary JSON responses.
+
 ---
 
 ## Common Mistakes

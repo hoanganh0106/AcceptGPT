@@ -1,5 +1,69 @@
 const escapeHtml = (value: string): string => value.replace(/[&<>"']/g, (char) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[char] ?? char));
-const pageCss = `:root{--bg:#f4f6fb;--card:#fff;--text:#1a2233;--muted:#5b6474;--accent:#4f46e5;--ok-bg:#e7f6ec;--ok-text:#166534;--err-bg:#fdecec;--err-text:#b91c1c;--warn-bg:#fff4d6;--warn-text:#92400e;--border:#e3e8f0;font-family:system-ui,-apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif;color:var(--text);background:var(--bg)}*{box-sizing:border-box}body{margin:0;min-width:320px}.shell{width:min(100% - 2rem,960px);margin:clamp(1rem,6vw,4rem) auto}.card{background:var(--card);border:1px solid var(--border);border-radius:14px;padding:clamp(1.25rem,4vw,2rem);margin-bottom:1rem;box-shadow:0 8px 24px rgba(20,30,60,.08)}h1,h2{margin-top:0}p{line-height:1.55}.notice,.message,.result{padding:.85rem 1rem;border-radius:10px}.notice{background:var(--warn-bg);color:var(--warn-text)}.message:empty,.result:empty{display:none}.message-success,.result-success{background:var(--ok-bg);color:var(--ok-text)}.message-error,.result-error{background:var(--err-bg);color:var(--err-text)}label{display:block;margin:.85rem 0 .35rem;font-weight:700}input,textarea,button{font:inherit}input,textarea{width:100%;border:1px solid var(--border);border-radius:10px;padding:.8rem;background:#fff}textarea{min-height:150px;resize:vertical}input:focus,textarea:focus,button:focus-visible{outline:3px solid rgba(79,70,229,.25);outline-offset:2px;border-color:var(--accent)}.row,.actions{display:flex;gap:.6rem;margin-top:.5rem}.row input{min-width:0}button{border:0;border-radius:10px;padding:.75rem 1rem;background:var(--accent);color:#fff;font-weight:700;cursor:pointer}button.secondary{background:#5b6474}button.danger{background:var(--err-bg);color:var(--err-text)}button:disabled{opacity:.6;cursor:not-allowed}.history-wrap{overflow-x:auto;border:1px solid var(--border);border-radius:10px}table{width:100%;min-width:820px;border-collapse:collapse}th,td{padding:.7rem;text-align:left;border-bottom:1px solid var(--border)}.empty{text-align:center;color:var(--muted)}.badge{display:inline-block;border-radius:999px;padding:.15rem .5rem;font-size:.82rem;font-weight:700}.badge-ok{background:var(--ok-bg);color:var(--ok-text)}.badge-error{background:var(--err-bg);color:var(--err-text)}.badge-warn{background:var(--warn-bg);color:var(--warn-text)}.badge-muted{background:#e9edf4;color:#4d5a70}#created{white-space:pre-wrap;min-height:1.5rem;max-height:240px;overflow:auto;padding:.75rem;border:1px solid var(--border);border-radius:10px;background:#f8f9fc}.pager{justify-content:space-between;align-items:center}@media(max-width:620px){.shell{width:min(100% - 1rem,960px)}.row,.actions{flex-direction:column}.row button,.actions button{width:100%}}`;
+const pageCss = `
+:root{
+  --bg:#eef1f8;--bg-accent:#e5e9fb;--card:#fff;--text:#141a29;--muted:#616b80;
+  --accent:#4f46e5;--accent-2:#7c69f5;--accent-strong:#4338ca;--accent-soft:rgba(79,70,229,.12);
+  --ok-bg:#e7f6ec;--ok-text:#166534;--err-bg:#fdecec;--err-text:#b91c1c;--warn-bg:#fff6e0;--warn-text:#8a5a00;
+  --border:#e3e8f0;--input-bg:#fff;--code-bg:#f6f7fb;--th-bg:#f7f8fc;--shadow:0 10px 30px rgba(20,30,60,.10);
+  font-family:system-ui,-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,sans-serif;color:var(--text);
+}
+@media(prefers-color-scheme:dark){:root{
+  --bg:#0d1117;--bg-accent:#151b2e;--card:#161c2b;--text:#e7ebf3;--muted:#9aa4ba;
+  --accent:#7c81ff;--accent-2:#a58bff;--accent-strong:#6366f1;--accent-soft:rgba(124,129,255,.18);
+  --ok-bg:#123122;--ok-text:#6ee7a8;--err-bg:#3a1620;--err-text:#ff9aa6;--warn-bg:#3a2c10;--warn-text:#ffce7a;
+  --border:#28304a;--input-bg:#0f1524;--code-bg:#0f1524;--th-bg:#1b2337;--shadow:0 12px 34px rgba(0,0,0,.45);
+}}
+*{box-sizing:border-box}
+body{margin:0;min-width:320px;-webkit-font-smoothing:antialiased;background:
+  radial-gradient(1100px 520px at 12% -8%,var(--bg-accent),transparent 60%),
+  radial-gradient(900px 480px at 100% 0,var(--accent-soft),transparent 55%),var(--bg);
+  min-height:100vh}
+.shell{width:min(100% - 2rem,960px);margin:clamp(1rem,6vw,4rem) auto}
+.card{background:var(--card);border:1px solid var(--border);border-radius:16px;padding:clamp(1.25rem,4vw,2rem);margin-bottom:1.1rem;box-shadow:var(--shadow)}
+header.card{background:linear-gradient(135deg,var(--accent),var(--accent-2));border:0;color:#fff}
+header.card h1{color:#fff}
+h1{margin-top:0;font-size:clamp(1.5rem,4vw,2rem);letter-spacing:-.02em}
+h2{margin-top:0;font-size:1.2rem;letter-spacing:-.01em}
+p{line-height:1.6}
+a{color:var(--accent);font-weight:600}
+.notice,.message,.result{padding:.85rem 1rem;border-radius:12px}
+.notice{background:var(--warn-bg);color:var(--warn-text);border:1px solid color-mix(in srgb,var(--warn-text) 22%,transparent);border-left:4px solid var(--warn-text)}
+.notice a{color:inherit}
+.message:empty,.result:empty{display:none}
+.message-success,.result-success{background:var(--ok-bg);color:var(--ok-text)}
+.message-error,.result-error{background:var(--err-bg);color:var(--err-text)}
+label{display:block;margin:1rem 0 .4rem;font-weight:700;font-size:.94rem}
+input,textarea,button{font:inherit}
+input,textarea{width:100%;border:1px solid var(--border);border-radius:11px;padding:.8rem .9rem;background:var(--input-bg);color:var(--text);transition:border-color .15s,box-shadow .15s}
+textarea{min-height:150px;resize:vertical;font-family:ui-monospace,SFMono-Regular,Menlo,monospace;font-size:.92rem}
+input::placeholder,textarea::placeholder{color:var(--muted)}
+input:focus,textarea:focus{outline:0;border-color:var(--accent);box-shadow:0 0 0 4px var(--accent-soft)}
+button:focus-visible{outline:0;box-shadow:0 0 0 4px var(--accent-soft)}
+.row,.actions{display:flex;gap:.6rem;margin-top:.6rem;flex-wrap:wrap}
+.row input{min-width:0;flex:1}
+button{border:0;border-radius:11px;padding:.75rem 1.1rem;background:linear-gradient(135deg,var(--accent),var(--accent-2));color:#fff;font-weight:700;cursor:pointer;transition:transform .12s,box-shadow .15s,filter .15s;box-shadow:0 6px 16px var(--accent-soft)}
+button:hover:not(:disabled){transform:translateY(-1px);filter:brightness(1.05);box-shadow:0 10px 22px var(--accent-soft)}
+button:active:not(:disabled){transform:translateY(0)}
+button.secondary{background:transparent;color:var(--text);border:1px solid var(--border);box-shadow:none}
+button.secondary:hover:not(:disabled){background:var(--code-bg);filter:none}
+button.danger{background:var(--err-bg);color:var(--err-text);box-shadow:none}
+button:disabled{opacity:.55;cursor:not-allowed;transform:none}
+.history-wrap{overflow-x:auto;border:1px solid var(--border);border-radius:12px}
+table{width:100%;min-width:820px;border-collapse:collapse}
+th,td{padding:.75rem;text-align:left;border-bottom:1px solid var(--border)}
+th{background:var(--th-bg);font-size:.82rem;text-transform:uppercase;letter-spacing:.04em;color:var(--muted);position:sticky;top:0}
+tbody tr:last-child td{border-bottom:0}
+tbody tr:hover td{background:var(--code-bg)}
+.empty{text-align:center;color:var(--muted)}
+.badge{display:inline-block;border-radius:999px;padding:.2rem .6rem;font-size:.78rem;font-weight:700}
+.badge-ok{background:var(--ok-bg);color:var(--ok-text)}
+.badge-error{background:var(--err-bg);color:var(--err-text)}
+.badge-warn{background:var(--warn-bg);color:var(--warn-text)}
+.badge-muted{background:var(--code-bg);color:var(--muted)}
+#created{white-space:pre-wrap;min-height:1.5rem;max-height:240px;overflow:auto;padding:.85rem;border:1px solid var(--border);border-radius:11px;background:var(--code-bg);font-family:ui-monospace,SFMono-Regular,Menlo,monospace;font-size:.9rem}
+.pager{justify-content:space-between;align-items:center}
+@media(max-width:620px){.shell{width:min(100% - 1rem,960px)}.row,.actions{flex-direction:column}.row button,.actions button,.row input{width:100%}}
+`;
 const clientErrorMessages = JSON.stringify({
   CDK_INVALID_OR_USED: 'The CDK is invalid or has already been used.',
   CDK_HASH_COLLISION: 'The CDK could not be stored safely. Please try again.',
@@ -19,10 +83,17 @@ const clientErrorMessages = JSON.stringify({
   CDK_GENERATION_FAILED: 'Could not create CDKs.',
   UNAUTHORIZED: 'Please sign in first.',
 });
+const clientProgressMessages = JSON.stringify({
+  cdk_valid: 'CDK is valid.',
+  session_loaded: 'Session loaded for {email}.',
+  join_request: 'Sending join request to the workspace…',
+  queued: 'Join request submitted. Waiting for the approval bot…',
+  approved: 'Join request approved.',
+});
 
 export function renderRedeemPage(nonce: string): string {
   const safe = escapeHtml(nonce);
-  return `<!doctype html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>Join workspace</title><style nonce="${safe}">${pageCss}.shell{max-width:640px}.result{margin-top:1rem;font-weight:650}</style></head><body><main class="shell"><section class="card"><h1>Join workspace</h1><p class="notice">The CDK is consumed only after the join or approval succeeds; if the session fails, the CDK remains available.</p><form id="redeem"><label for="cdk">CDK</label><input id="cdk" required autocomplete="off" autocapitalize="characters" placeholder="XXXX-XXXX-XXXX-XXXX"><label for="session">ChatGPT session</label><textarea id="session" required autocomplete="off"></textarea><button type="submit">Submit request</button></form><p id="result" class="result" role="status" aria-live="polite"></p></section></main><script nonce="${safe}">(function(){const ERROR_MESSAGES=${clientErrorMessages};const form=document.getElementById('redeem'),result=document.getElementById('result'),cdk=document.getElementById('cdk'),session=document.getElementById('session'),button=form.querySelector('button');function messageFor(data,fallback){return typeof data?.code==='string'&&ERROR_MESSAGES[data.code]?ERROR_MESSAGES[data.code]:fallback}function show(kind,text){result.textContent=text;result.className='result result-'+kind}function busy(on){form.setAttribute('aria-busy',String(on));button.disabled=on;button.textContent=on?'Processing…':'Submit request'}cdk.addEventListener('input',()=>{cdk.value=cdk.value.toUpperCase()});form.addEventListener('submit',async event=>{event.preventDefault();const sessionValue=session.value;session.value='';busy(true);try{const response=await fetch('/api/redeem',{method:'POST',headers:{'content-type':'application/json'},body:JSON.stringify({cdk:cdk.value,session:sessionValue})});const data=await response.json().catch(()=>({}));if(response.ok&&data.ok){show('success',data.status==='already_member'?'Email '+data.email+' is already a workspace member.':'Request approved for '+data.email+'. Check ChatGPT to continue.');cdk.value=''}else show('error',messageFor(data,'The request could not be completed.'))}catch(_){show('error','Could not connect to the service.')}finally{busy(false)}})})();</script></body></html>`;
+  return `<!doctype html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>Join workspace</title><style nonce="${safe}">${pageCss}.shell{max-width:640px}.result{margin-top:1rem;font-weight:650}.log{list-style:none;margin:1rem 0 0;padding:0;color:var(--muted);font-family:ui-monospace,SFMono-Regular,Menlo,monospace;font-size:.92rem}.log li{padding:.35rem 0;border-bottom:1px solid var(--border)}</style></head><body><main class="shell"><section class="card"><h1>Join workspace</h1><p class="notice">The CDK is consumed only after the join or approval succeeds; if the session fails, the CDK remains available.</p><form id="redeem"><label for="cdk">CDK</label><input id="cdk" required autocomplete="off" autocapitalize="characters" placeholder="XXXX-XXXX-XXXX-XXXX"><label for="session">ChatGPT session</label><p class="notice">To get your session, open <a href="https://chatgpt.com/api/auth/session" target="_blank" rel="noopener noreferrer">chatgpt.com/api/auth/session</a> in your browser, copy everything shown on that page, and paste it into the box below.</p><textarea id="session" required autocomplete="off"></textarea><button type="submit">Submit request</button></form><ul id="log" class="log" aria-live="polite"></ul><p id="result" class="result" role="status" aria-live="polite"></p></section></main><script nonce="${safe}">(function(){const ERROR_MESSAGES=${clientErrorMessages},STEP_MESSAGES=${clientProgressMessages};const form=document.getElementById('redeem'),result=document.getElementById('result'),log=document.getElementById('log'),cdk=document.getElementById('cdk'),session=document.getElementById('session'),button=form.querySelector('button');function messageFor(data,fallback){return typeof data?.code==='string'&&ERROR_MESSAGES[data.code]?ERROR_MESSAGES[data.code]:fallback}function appendLog(text){const line=document.createElement('li');line.textContent=text;log.appendChild(line)}function clearResult(){result.textContent='';result.className='result'}function show(kind,text){result.textContent=text;result.className='result result-'+kind}function renderResult(data){if(data&&data.ok){show('success',data.status==='already_member'?data.email+' is already a member of this workspace.':'Done! '+data.email+' is now a member. Open ChatGPT and switch to the workspace.');return true}show('error',messageFor(data,'The request could not be completed.'));return false}function consumeEvent(event){if(!event||event.type==='ping')return null;if(event.type==='progress'){const template=STEP_MESSAGES[event.step];if(template)appendLog(template.replace('{email}',String(event.email||'')));return null}if(event.type==='result'){renderResult(event);return event}return null}async function readNdjson(body){const reader=body.getReader(),decoder=new TextDecoder();let buffer='',finalResult=null;for(;;){const chunk=await reader.read();buffer+=decoder.decode(chunk.value||new Uint8Array(),{stream:!chunk.done});const lines=buffer.split('\\n');buffer=lines.pop()||'';for(const line of lines){if(!line.trim())continue;try{finalResult=consumeEvent(JSON.parse(line))||finalResult}catch(_){}}if(chunk.done)break}if(buffer.trim()){try{finalResult=consumeEvent(JSON.parse(buffer))||finalResult}catch(_){}}return finalResult}function busy(on){form.setAttribute('aria-busy',String(on));button.disabled=on;button.textContent=on?'Processing…':'Submit request'}cdk.addEventListener('input',()=>{cdk.value=cdk.value.toUpperCase()});form.addEventListener('submit',async event=>{event.preventDefault();const sessionValue=session.value;session.value='';log.textContent='';clearResult();appendLog('Submitting request…');busy(true);try{const response=await fetch('/api/redeem',{method:'POST',headers:{'content-type':'application/json'},body:JSON.stringify({cdk:cdk.value,session:sessionValue})});const contentType=response.headers.get('content-type')||'';if(contentType.includes('application/x-ndjson')&&response.body){const finalResult=await readNdjson(response.body);if(!finalResult)show('error','The request could not be completed.');else if(finalResult.ok)cdk.value=''}else{const data=await response.json().catch(()=>({}));if(renderResult(response.ok&&data.ok?data:{...data,ok:false}))cdk.value=''}}catch(_){show('error','Could not connect to the service.')}finally{busy(false)}})})();</script></body></html>`;
 }
 
 export function renderAdminPage(nonce: string): string {

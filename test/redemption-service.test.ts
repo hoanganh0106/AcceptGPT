@@ -33,3 +33,56 @@ test('claims and finishes CDK only after already-member join succeeds', async ()
   assert.deepEqual(calls, ['join', 'claim', 'finish:already_member']);
   assert.deepEqual(result, { ok: true, status: 'already_member', email: 'user@example.com' });
 });
+
+test('emits redemption progress in order for an accepted join', async () => {
+  const steps: unknown[] = [];
+  const service = new RedemptionService({
+    store: baseStore() as never, queue: { enqueue: (job: { complete?: (completion: unknown) => void }) => queueMicrotask(() => job.complete?.({ kind: 'processed', results: [{ email: 'user@example.com', status: 'accepted' }], count: 1 })) } as never,
+    worker: { isReadyForRedemptions: true }, cdkHashSecret: 's'.repeat(32), logger,
+    joinClient: { requestJoin: async () => ({ membership: 'not-member', requestAccepted: true, inviteAccepted: true }) } as never,
+  });
+  const result = await service.redeem({ cdk: 'ABCD-EFGH-JKLM-NPQR', session: { access_token: token } }, (event) => steps.push(event));
+  assert.equal(result.ok, true);
+  assert.deepEqual(steps, [
+    { step: 'cdk_valid' },
+    { step: 'session_loaded', email: 'user@example.com' },
+    { step: 'join_request' },
+    { step: 'queued' },
+    { step: 'approved' },
+  ]);
+});
+
+test('stops redemption progress after join_request for an existing member', async () => {
+  const steps: unknown[] = [];
+  const service = new RedemptionService({
+    store: baseStore() as never, queue: {} as never, worker: { isReadyForRedemptions: true }, cdkHashSecret: 's'.repeat(32), logger,
+    joinClient: { requestJoin: async () => ({ membership: 'member', requestAccepted: true, inviteAccepted: true }) } as never,
+  });
+  const result = await service.redeem({ cdk: 'ABCD-EFGH-JKLM-NPQR', session: { access_token: token } }, (event) => steps.push(event));
+  assert.equal(result.ok, true);
+  assert.deepEqual(steps, [
+    { step: 'cdk_valid' },
+    { step: 'session_loaded', email: 'user@example.com' },
+    { step: 'join_request' },
+  ]);
+});
+
+test('does not emit server progress after an invalid CDK', async () => {
+  const steps: unknown[] = [];
+  const service = new RedemptionService({
+    store: baseStore() as never, queue: {} as never, worker: { isReadyForRedemptions: true }, cdkHashSecret: 's'.repeat(32), logger,
+    joinClient: {} as never,
+  });
+  const result = await service.redeem({ cdk: 'bad', session: { access_token: token } }, (event) => steps.push(event));
+  assert.deepEqual(result, { ok: false, code: 'CDK_INVALID_OR_USED', message: 'CDK không hợp lệ hoặc đã được sử dụng.' });
+  assert.deepEqual(steps, []);
+});
+
+test('progress callback failures do not fail the redemption', async () => {
+  const service = new RedemptionService({
+    store: baseStore() as never, queue: {} as never, worker: { isReadyForRedemptions: true }, cdkHashSecret: 's'.repeat(32), logger,
+    joinClient: { requestJoin: async () => ({ membership: 'member', requestAccepted: true, inviteAccepted: true }) } as never,
+  });
+  const result = await service.redeem({ cdk: 'ABCD-EFGH-JKLM-NPQR', session: { access_token: token } }, () => { throw new Error('client disconnected'); });
+  assert.deepEqual(result, { ok: true, status: 'already_member', email: 'user@example.com' });
+});

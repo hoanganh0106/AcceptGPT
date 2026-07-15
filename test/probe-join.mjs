@@ -11,14 +11,38 @@
 //   node test/probe-join.mjs <workspace-uuid> <access-token>
 
 import { randomUUID } from 'node:crypto';
+import { readFileSync, existsSync } from 'node:fs';
+import { fileURLToPath } from 'node:url';
+import { dirname, join } from 'node:path';
+
+const HERE = dirname(fileURLToPath(import.meta.url));
+const readIf = (p) => { try { return existsSync(p) ? readFileSync(p, 'utf8').trim() : ''; } catch { return ''; } };
+
+// Cho phép dán CẢ session JSON (nhiều key) — tự bóc access_token ra, giống app thật.
+function extractToken(raw) {
+  const s = (raw || '').trim();
+  if (!s) return '';
+  if (s.startsWith('{') || s.startsWith('[')) {
+    try {
+      const j = JSON.parse(s);
+      const o = Array.isArray(j) ? j[0] : j;
+      return String(o.access_token || o.accessToken || o.at || '').trim();
+    } catch { return ''; }
+  }
+  return s; // đã là token eyJ...
+}
 
 const BASE = (process.env.PROBE_BASE || 'https://chatgpt.com').replace(/\/$/, '');
-const WS = process.env.PROBE_WS || process.argv[2] || '';
-const AT = process.env.PROBE_AT || process.argv[3] || '';
+const WS = process.env.PROBE_WS || process.argv[2] || readIf(join(HERE, 'probe-ws.txt'));
+const AT = extractToken(process.env.PROBE_AT || process.argv[3] || readIf(join(HERE, 'probe-at.txt')));
 
 if (!WS || !AT) {
-  console.error('Thiếu tham số. Cần: PROBE_WS (workspace uuid) và PROBE_AT (access token).');
-  console.error('VD: PROBE_AT="eyJ..." PROBE_WS="fa2aff95-..." node test/probe-join.mjs');
+  console.error('Thiếu tham số.');
+  console.error('Cách 1 (khuyên dùng): tạo 2 file cạnh script rồi chạy `node test/probe-join.mjs`:');
+  console.error('  test/probe-at.txt  -> dán access_token (eyJ...) HOẶC cả session JSON');
+  console.error('  test/probe-ws.txt  -> dán workspace UUID');
+  console.error('Cách 2: PROBE_AT="eyJ..." PROBE_WS="fa2aff95-..." node test/probe-join.mjs');
+  console.error('Cách 3: node test/probe-join.mjs <workspace-uuid> <access-token>');
   process.exit(1);
 }
 
